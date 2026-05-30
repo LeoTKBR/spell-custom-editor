@@ -5,8 +5,8 @@ from __future__ import annotations
 import copy
 import json
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QFont, QPixmap
+from PySide6.QtCore import Qt, QTimer, Signal, QSettings, QUrl, QElapsedTimer
+from PySide6.QtGui import QAction, QFont, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Graphics Resources Manager (Qt)")
         self.resize(1320, 880)
+        self.settings = QSettings("LeoTK", "SpellCustomEditor")
 
         self.core = GraphicsCore()
         self.core.log = self.log_signal.emit
@@ -70,10 +71,13 @@ class MainWindow(QMainWindow):
         self._pixmap_cache: dict[int, QPixmap] = {}
 
         self._build_ui()
+        self._load_ui_settings()
         self._set_loaded_actions_state(False)
 
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._on_anim_tick)
+        self._anim_elapsed = QElapsedTimer()
+        self._anim_elapsed.start()
         self._anim_timer.start(33)
 
     # ===================================================================
@@ -83,6 +87,8 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
 
         client_box = QGroupBox("1) Cliente")
         cb = QVBoxLayout(client_box)
@@ -104,6 +110,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 100)
         prow.addWidget(self.progress_bar, 1)
         self.status_label = QLabel("Aguardando selecao da pasta do cliente.")
+        self.status_label.setWordWrap(True)
         prow.addWidget(self.status_label)
         cb.addLayout(prow)
         root.addWidget(client_box)
@@ -119,8 +126,10 @@ class MainWindow(QMainWindow):
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(2000)
-        self.log_view.setFixedHeight(150)
+        self.log_view.setMinimumHeight(120)
         lb.addWidget(self.log_view)
+        self.log_box = log_box
+        self.log_box.setVisible(False)
         root.addWidget(log_box)
 
         self._build_menu_and_toolbar()
@@ -135,14 +144,55 @@ class MainWindow(QMainWindow):
         self.act_backup.triggered.connect(self.on_manual_backup)
         build_menu.addAction(self.act_backup)
 
-        view_menu = menubar.addMenu("Exibir")
-        self.act_dark = QAction("Tema escuro", self, checkable=True, checked=True)
-        self.act_dark.triggered.connect(lambda: apply_theme(QApplication.instance(), self.act_dark.isChecked()))
-        view_menu.addAction(self.act_dark)
+        options_menu = menubar.addMenu("Opções")
+        self.act_toggle_log = QAction("Mostrar Log", self, checkable=True, checked=False)
+        self.act_toggle_log.toggled.connect(self._on_toggle_log)
+        options_menu.addAction(self.act_toggle_log)
+
+        discord_menu = menubar.addMenu("Discord")
+        act_discord_canary = QAction("Canary", self)
+        act_discord_canary.triggered.connect(lambda: self._open_url("https://discord.gg/gvTj5sh9Mp"))
+        discord_menu.addAction(act_discord_canary)
+        act_discord_tk = QAction("TK Dev Core", self)
+        act_discord_tk.triggered.connect(lambda: self._open_url("https://discord.gg/rj97H4JD3k"))
+        discord_menu.addAction(act_discord_tk)
+
+        credits_menu = menubar.addMenu("Créditos")
+        act_show_credits = QAction("Ver Créditos", self)
+        act_show_credits.triggered.connect(self._show_credits)
+        credits_menu.addAction(act_show_credits)
 
         tb = self.addToolBar("Acoes")
         tb.addAction(self.act_compile)
         tb.addAction(self.act_backup)
+
+    def _load_ui_settings(self) -> None:
+        last_client_dir = str(self.settings.value("client/last_dir", "", str))
+        if last_client_dir:
+            self.client_dir_edit.setText(last_client_dir)
+        apply_theme(QApplication.instance(), True)
+
+    def _save_ui_settings(self) -> None:
+        self.settings.setValue("client/last_dir", self.client_dir_edit.text().strip())
+        self.settings.sync()
+
+    def _open_url(self, url: str) -> None:
+        if not QDesktopServices.openUrl(QUrl(url)):
+            QMessageBox.warning(self, "Atencao", f"Nao foi possivel abrir o link:\n{url}")
+
+    def _show_credits(self) -> None:
+        QMessageBox.information(
+            self,
+            "Créditos",
+            "Créditos:\n\n"
+            "LeoTK\n"
+            "Beats\n"
+            "RedSTwix\n"
+            "Pedrin",
+        )
+
+    def _on_toggle_log(self, visible: bool) -> None:
+        self.log_box.setVisible(visible)
 
     # ---- aba de icones --------------------------------------------------
     def _build_icon_tab(self) -> QWidget:
@@ -211,6 +261,7 @@ class MainWindow(QMainWindow):
     # ---- aba de spells --------------------------------------------------
     def _build_spells_tab(self) -> QWidget:
         split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
 
         left = QWidget()
         ll = QVBoxLayout(left)
@@ -231,12 +282,14 @@ class MainWindow(QMainWindow):
         for b in (self.btn_spell_new, self.btn_spell_dup, self.btn_spell_del):
             brow.addWidget(b)
         ll.addLayout(brow)
-        left.setMaximumWidth(360)
+        left.setMinimumWidth(260)
         split.addWidget(left)
 
         right = QWidget()
         rl = QVBoxLayout(right)
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.spell_fields = {
             "spellid": QLineEdit(),
             "name": QLineEdit(),
@@ -262,13 +315,27 @@ class MainWindow(QMainWindow):
             crow.addWidget(c)
         crow.addStretch(1)
         rl.addLayout(crow)
-        rl.addWidget(QLabel("description"))
+        text_split = QSplitter(Qt.Orientation.Horizontal)
+        text_split.setChildrenCollapsible(False)
+
+        description_box = QGroupBox("description")
+        dl = QVBoxLayout(description_box)
         self.spell_description = QTextEdit()
-        self.spell_description.setFixedHeight(80)
-        rl.addWidget(self.spell_description)
-        rl.addWidget(QLabel("Campos extras (JSON opcional)"))
+        self.spell_description.setMinimumHeight(220)
+        dl.addWidget(self.spell_description)
+        text_split.addWidget(description_box)
+
+        extra_box = QGroupBox("Campos extras (JSON opcional)")
+        el = QVBoxLayout(extra_box)
         self.spell_extra = QTextEdit()
-        rl.addWidget(self.spell_extra, 1)
+        self.spell_extra.setMinimumHeight(220)
+        el.addWidget(self.spell_extra)
+        text_split.addWidget(extra_box)
+
+        text_split.setStretchFactor(0, 1)
+        text_split.setStretchFactor(1, 1)
+        text_split.setSizes([520, 520])
+        rl.addWidget(text_split, 1)
         srow = QHBoxLayout()
         self.btn_spell_save = QPushButton("Salvar Registro")
         self.btn_spell_save.clicked.connect(self.save_spell_record)
@@ -278,8 +345,14 @@ class MainWindow(QMainWindow):
         srow.addWidget(self.btn_spells_save_all)
         srow.addStretch(1)
         rl.addLayout(srow)
-        split.addWidget(right)
-        split.setStretchFactor(1, 1)
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        right_scroll.setWidget(right)
+        split.addWidget(right_scroll)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
+        split.setSizes([360, 900])
 
         wrap = QWidget()
         QVBoxLayout(wrap).addWidget(split)
@@ -288,6 +361,7 @@ class MainWindow(QMainWindow):
     # ---- aba de previews ------------------------------------------------
     def _build_previews_tab(self) -> QWidget:
         split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
 
         left = QWidget()
         ll = QVBoxLayout(left)
@@ -308,34 +382,47 @@ class MainWindow(QMainWindow):
         for b in (self.btn_preview_new, self.btn_preview_dup, self.btn_preview_del):
             brow.addWidget(b)
         ll.addLayout(brow)
-        left.setMaximumWidth(360)
+        left.setMinimumWidth(260)
         split.addWidget(left)
 
         right = QTabWidget()
-        right.addTab(self._build_preview_structural(), "Estrutural")
-        right.addTab(self._build_preview_grid_tab(), "Grid FX/Missiles")
+        right.addTab(self._wrap_scroll_widget(self._build_preview_structural()), "Estrutural")
+        right.addTab(self._wrap_scroll_widget(self._build_preview_grid_tab()), "Grid FX/Missiles")
         split.addWidget(right)
-        split.setStretchFactor(1, 1)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 3)
+        split.setSizes([360, 900])
 
         wrap = QWidget()
         QVBoxLayout(wrap).addWidget(split)
         return wrap
 
+    def _wrap_scroll_widget(self, content: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(content)
+        return scroll
+
     def _build_preview_structural(self) -> QWidget:
         tab = QWidget()
         lay = QVBoxLayout(tab)
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.preview_fields = {"spellid": QLineEdit(), "name": QLineEdit(), "range": QLineEdit()}
         form.addRow("spellid", self.preview_fields["spellid"])
         form.addRow("name", self.preview_fields["name"])
         form.addRow("range", self.preview_fields["range"])
         lay.addLayout(form)
 
-        editors = QHBoxLayout()
+        editors = QSplitter(Qt.Orientation.Horizontal)
+        editors.setChildrenCollapsible(False)
         ts_box = QGroupBox("Timestamps")
         tsl = QVBoxLayout(ts_box)
         self.timestamps_list = QListWidget()
         self.timestamps_list.currentRowChanged.connect(self.on_select_timestamp)
+        self.timestamps_list.setMinimumHeight(120)
         tsl.addWidget(self.timestamps_list)
         tsb = QHBoxLayout()
         b1 = QPushButton("Adicionar")
@@ -345,22 +432,23 @@ class MainWindow(QMainWindow):
         tsb.addWidget(b1)
         tsb.addWidget(b2)
         tsl.addLayout(tsb)
-        editors.addWidget(ts_box, 1)
+        editors.addWidget(ts_box)
 
         act_box = QGroupBox("Actions do Timestamp")
         al = QVBoxLayout(act_box)
         self.actions_list = QListWidget()
         self.actions_list.currentRowChanged.connect(self.on_select_action)
+        self.actions_list.setMinimumHeight(120)
         al.addWidget(self.actions_list)
         af = QHBoxLayout()
         self.action_type = QComboBox()
         self.action_type.addItems(["fieldEffect", "missile", "objecttype", "target"])
         self.action_id = QLineEdit()
-        self.action_id.setFixedWidth(70)
+        self.action_id.setMinimumWidth(90)
         self.action_x = QLineEdit("0")
-        self.action_x.setFixedWidth(45)
+        self.action_x.setMinimumWidth(56)
         self.action_y = QLineEdit("0")
-        self.action_y.setFixedWidth(45)
+        self.action_y.setMinimumWidth(56)
         af.addWidget(QLabel("action"))
         af.addWidget(self.action_type)
         af.addWidget(QLabel("id"))
@@ -369,29 +457,30 @@ class MainWindow(QMainWindow):
         af.addWidget(self.action_x)
         af.addWidget(QLabel("y"))
         af.addWidget(self.action_y)
+        af.addStretch(1)
         al.addLayout(af)
         ab = QHBoxLayout()
         for label, slot in (("Adicionar", self.add_action), ("Atualizar", self.update_action), ("Remover", self.remove_action)):
             btn = QPushButton(label)
             btn.clicked.connect(slot)
             ab.addWidget(btn)
+        ab.addStretch(1)
         al.addLayout(ab)
-        editors.addWidget(act_box, 1)
-        lay.addLayout(editors, 1)
+        editors.addWidget(act_box)
 
         init_box = QGroupBox("InitActions")
         il = QVBoxLayout(init_box)
         self.init_actions_list = QListWidget()
         self.init_actions_list.currentRowChanged.connect(self.on_select_init_action)
-        self.init_actions_list.setFixedHeight(90)
+        self.init_actions_list.setMinimumHeight(120)
         il.addWidget(self.init_actions_list)
         iform = QHBoxLayout()
         self.init_action_type = QComboBox()
         self.init_action_type.addItems(["target", "fieldEffect"])
         self.init_action_x = QLineEdit("0")
-        self.init_action_x.setFixedWidth(45)
+        self.init_action_x.setMinimumWidth(56)
         self.init_action_y = QLineEdit("0")
-        self.init_action_y.setFixedWidth(45)
+        self.init_action_y.setMinimumWidth(56)
         iform.addWidget(QLabel("action"))
         iform.addWidget(self.init_action_type)
         iform.addWidget(QLabel("x"))
@@ -406,7 +495,12 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(slot)
             ib.addWidget(btn)
         il.addLayout(ib)
-        lay.addWidget(init_box)
+        editors.addWidget(init_box)
+        editors.setStretchFactor(0, 1)
+        editors.setStretchFactor(1, 1)
+        editors.setStretchFactor(2, 1)
+        editors.setSizes([340, 460, 340])
+        lay.addWidget(editors, 1)
 
         srow = QHBoxLayout()
         self.btn_preview_save = QPushButton("Salvar Registro")
@@ -451,7 +545,8 @@ class MainWindow(QMainWindow):
         side.addStretch(1)
         side_w = QWidget()
         side_w.setLayout(side)
-        side_w.setMaximumWidth(240)
+        side_w.setMinimumWidth(200)
+        side_w.setMaximumWidth(280)
         lay.addWidget(side_w)
 
         grid_box = QGroupBox("Preview Visual 16x14 (32px)")
@@ -460,6 +555,8 @@ class MainWindow(QMainWindow):
         self.preview_grid.cellClicked.connect(self.on_grid_click)
         gl.addWidget(self.preview_grid, 1)
         lay.addWidget(grid_box, 1)
+        lay.setStretch(0, 0)
+        lay.setStretch(1, 1)
         return tab
 
     # ===================================================================
@@ -516,6 +613,7 @@ class MainWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta do cliente")
         if folder:
             self.client_dir_edit.setText(folder)
+            self._save_ui_settings()
             self._append_log(f"Pasta selecionada: {folder}")
 
     def on_load_client(self) -> None:
@@ -1129,11 +1227,49 @@ class MainWindow(QMainWindow):
         ox, oy = self.preview_grid.origin
         target = self._preview_target_offset()
         selected_cell = self.preview_grid.selected_cell
+        elapsed_ms = int(self._anim_elapsed.elapsed()) if self._anim_elapsed.isValid() else (self._anim_tick * 33)
 
         plan: list[tuple[int, int, object]] = []  # (gx, gy, pil_img_or_None)
         ts = self.get_selected_timestamp()
         if ts is not None:
-            for action in ts.get("actions", []):
+            actions = list(ts.get("actions", []))
+            missile_actions = [a for a in actions if a.get("action") == "missile"]
+            effect_like_actions = [a for a in actions if a.get("action") in ("fieldEffect", "objecttype")]
+
+            effect_windows = []
+            for action in effect_like_actions:
+                atype = action.get("action")
+                cat = None
+                if atype == "fieldEffect":
+                    cat = self.core.effect_by_id(int(action.get("effectID", 0)))
+                elif atype == "objecttype":
+                    cat = self.core.object_by_id(int(action.get("objecttypeID", 0)))
+                w = self.core.animation_total_duration_max_ms(cat)
+                if w > 0:
+                    effect_windows.append(w)
+            effect_phase_ms = max(effect_windows) if effect_windows else 1000
+
+            # ciclo de onda:
+            # - com missile: missiles viajam -> effects aparecem no alvo -> espera efeito terminar -> repete
+            # - sem missile: effects aparecem juntos -> espera terminar -> repete
+            missile_travel_ms = 420
+            if missile_actions:
+                cycle_ms = missile_travel_ms + effect_phase_ms
+                cycle_pos = elapsed_ms % cycle_ms
+                missile_active = cycle_pos < missile_travel_ms
+                effect_active = not missile_active
+                missile_local_ms = cycle_pos
+                effect_local_ms = max(0, cycle_pos - missile_travel_ms)
+            else:
+                cycle_ms = effect_phase_ms
+                cycle_pos = elapsed_ms % cycle_ms
+                missile_active = False
+                effect_active = True
+                missile_local_ms = 0
+                effect_local_ms = cycle_pos
+
+            for action in actions:
+                local_ms = elapsed_ms
                 try:
                     ax = int(action.get("x", 0))
                     ay = int(action.get("y", 0))
@@ -1148,24 +1284,30 @@ class MainWindow(QMainWindow):
                 try:
                     atype = action.get("action")
                     if atype == "fieldEffect":
+                        if not effect_active:
+                            continue
                         cat = self.core.effect_by_id(int(action.get("effectID", 0)))
                         if cat is not None:
                             pw = max(1, int(cat.get("pattern_width", 1)))
                             ph = max(1, int(cat.get("pattern_height", 1)))
-                            sprite_img = self.core.sprite_for_catalog_entry(cat, self._anim_tick, ((gx % pw) + pw) % pw, ((gy % ph) + ph) % ph)
+                            sprite_img = self.core.sprite_for_catalog_entry(cat, effect_local_ms, ((gx % pw) + pw) % pw, ((gy % ph) + ph) % ph)
                     elif atype == "missile":
+                        if not missile_active:
+                            continue
                         cat = self.core.missile_by_id(int(action.get("missileID", 0)))
                         mpx, mpy = self.core.missile_pattern_for_offset(ax, ay)
-                        sprite_img = self.core.sprite_for_catalog_entry(cat, self._anim_tick, mpx, mpy)
-                        phase = (self._anim_tick % 8) / 7.0
+                        sprite_img = self.core.sprite_for_catalog_entry(cat, missile_local_ms, mpx, mpy)
+                        phase = min(1.0, max(0.0, missile_local_ms / missile_travel_ms))
                         draw_gx = int(round(ox + (gx - ox) * phase))
                         draw_gy = int(round(oy + (gy - oy) * phase))
                     elif atype == "objecttype" and self.render_objecttype.isChecked():
+                        if not effect_active:
+                            continue
                         cat = self.core.object_by_id(int(action.get("objecttypeID", 0)))
                         if cat is not None:
                             pw = max(1, int(cat.get("pattern_width", 1)))
                             ph = max(1, int(cat.get("pattern_height", 1)))
-                            sprite_img = self.core.sprite_for_catalog_entry(cat, self._anim_tick, ((gx % pw) + pw) % pw, ((gy % ph) + ph) % ph)
+                            sprite_img = self.core.sprite_for_catalog_entry(cat, effect_local_ms, ((gx % pw) + pw) % pw, ((gy % ph) + ph) % ph)
                 except Exception:
                     sprite_img = None
                 plan.append((draw_gx, draw_gy, sprite_img))
@@ -1185,3 +1327,7 @@ class MainWindow(QMainWindow):
 
     def on_manual_backup(self) -> None:
         self.run_bg(self.core.manual_backup, lambda: QMessageBox.information(self, "Backup", "Backup manual concluido."))
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._save_ui_settings()
+        super().closeEvent(event)

@@ -120,7 +120,7 @@ def safe_text_value(value) -> str:
 
 def detect_proto_path() -> Path | None:
     candidates = [
-        Path(r"C:\Users\Leona\Documents\GitHub\Assets-Editor\Assets Editor\appearances.proto"),
+        Path(__file__).resolve().parent / "appearances.proto",
         Path(__file__).resolve().parent.parent / "appearances.proto",
     ]
     for candidate in candidates:

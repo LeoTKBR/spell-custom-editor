@@ -46,6 +46,7 @@ class GraphicsCore:
         self._missiles_by_id: dict[int, dict] = {}
         self._object_msgs: dict[int, object] = {}
         self._object_entry_cache: dict[int, dict] = {}
+        self._anim_meta_cache: dict[tuple, dict] = {}
         self._app_module = None
         self._appearances = None
 
@@ -97,14 +98,12 @@ class GraphicsCore:
         self.progress("Concluido", "Cliente carregado e pronto para edicao.", 100)
 
     def auto_backup_on_load(self, p: dict[str, Path]) -> None:
-        backup_root = p["base"] / "backup"
-        backup_root.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        for item in (p["source_rcc"], p["client_exe"]):
-            if item.exists():
-                dst = backup_root / f"{item.stem}.autobackup_{stamp}{item.suffix}"
-                shutil.copy2(item, dst)
-                self.log(f"Backup automatico: {dst}")
+        src_rcc = p["source_rcc"]
+        if not src_rcc.exists():
+            return
+        bak_rcc = src_rcc.with_suffix(src_rcc.suffix + ".bak")
+        shutil.copy2(src_rcc, bak_rcc)
+        self.log(f"Backup automatico RCC atualizado: {bak_rcc}")
 
     def decompile_rcc(self) -> None:
         p = self.client_paths()
@@ -205,6 +204,7 @@ class GraphicsCore:
         self._missiles_by_id = {}
         self._object_msgs = {}
         self._object_entry_cache = {}
+        self._anim_meta_cache = {}
         try:
             p = self.client_paths()
             assets_dir = p["base"] / "assets"
@@ -270,6 +270,8 @@ class GraphicsCore:
         sprite_ids: list[int] = []
         pattern_width = pattern_height = pattern_depth = layers = 1
         frame_durations: list[int] = []
+        frame_durations_min: list[int] = []
+        frame_durations_max: list[int] = []
         try:
             for fg in getattr(a, "frame_group", []):
                 if not getattr(fg, "sprite_info", None):
@@ -283,7 +285,14 @@ class GraphicsCore:
                     for ph in getattr(si.animation, "sprite_phase", []):
                         mn = int(getattr(ph, "duration_min", 0) or 0)
                         mx = int(getattr(ph, "duration_max", mn) or mn)
-                        frame_durations.append(40 if (mn <= 0 and mx <= 0) else max(1, (mn + mx) // 2))
+                        if mn <= 0 and mx <= 0:
+                            mn = 40
+                            mx = 40
+                        if mx < mn:
+                            mx = mn
+                        frame_durations_min.append(max(1, mn))
+                        frame_durations_max.append(max(1, mx))
+                        frame_durations.append(max(1, (mn + mx) // 2))
                 except Exception:
                     pass
                 for sid in getattr(fg.sprite_info, "sprite_id", []):
@@ -302,6 +311,8 @@ class GraphicsCore:
             "pattern_depth": pattern_depth,
             "layers": layers,
             "frame_durations": frame_durations,
+            "frame_durations_min": frame_durations_min,
+            "frame_durations_max": frame_durations_max,
         }
 
     def _load_sprite_ranges_from_catalog(self, catalog_path: Path, assets_dir: Path) -> list[dict]:
@@ -422,34 +433,68 @@ class GraphicsCore:
     def max_missile_id(self) -> int:
         return max([int(m.get("id", 1)) for m in self.missiles_catalog], default=1)
 
-    def _current_phase_for_catalog_entry(self, cat: dict, tick: int) -> int:
+    def _animation_meta_for_entry(self, cat: dict) -> dict:
         pw = max(1, int(cat.get("pattern_width", 1)))
         ph = max(1, int(cat.get("pattern_height", 1)))
         pd = max(1, int(cat.get("pattern_depth", 1)))
         layers = max(1, int(cat.get("layers", 1)))
         sprite_ids = [int(s) for s in cat.get("sprite_ids", []) if int(s) > 0]
+        sig = (
+            int(cat.get("id", 0)),
+            pw,
+            ph,
+            pd,
+            layers,
+            len(sprite_ids),
+            tuple(int(d) for d in cat.get("frame_durations_min", []) if int(d) > 0),
+            tuple(int(d) for d in cat.get("frame_durations_max", []) if int(d) > 0),
+            tuple(int(d) for d in cat.get("frame_durations", []) if int(d) > 0),
+        )
+        cached = self._anim_meta_cache.get(sig)
+        if cached is not None:
+            return cached
         sprites_per_phase = max(1, layers * pw * ph * pd)
         phases_available = max(1, len(sprite_ids) // sprites_per_phase)
+        min_durations = [int(d) for d in cat.get("frame_durations_min", []) if int(d) > 0]
+        max_durations = [int(d) for d in cat.get("frame_durations_max", []) if int(d) > 0]
         durations = [int(d) for d in cat.get("frame_durations", []) if int(d) > 0]
+
+        if min_durations and max_durations:
+            c = min(len(min_durations), len(max_durations))
+            durations = [max(1, (min_durations[i] + max_durations[i]) // 2) for i in range(c)]
         if not durations:
             durations = [60] * phases_available
         if len(durations) < phases_available:
             durations.extend([durations[-1]] * (phases_available - len(durations)))
         elif len(durations) > phases_available:
             durations = durations[:phases_available]
-        total = sum(durations)
-        if total <= 0 or phases_available <= 1:
-            return 0
-        elapsed_ms = tick * 33
-        t = elapsed_ms % total
-        acc = 0
-        for i, d in enumerate(durations):
-            acc += d
-            if t < acc:
-                return i
-        return len(durations) - 1
 
-    def sprite_for_catalog_entry(self, cat: dict | None, tick: int, pattern_x: int = 0, pattern_y: int = 0):
+        cumulative: list[int] = []
+        acc = 0
+        for d in durations:
+            acc += d
+            cumulative.append(acc)
+        meta = {
+            "sprites_per_phase": sprites_per_phase,
+            "phases_available": phases_available,
+            "durations": durations,
+            "total_duration": max(1, cumulative[-1] if cumulative else 1),
+            "cumulative": cumulative,
+        }
+        self._anim_meta_cache[sig] = meta
+        return meta
+
+    def _current_phase_for_catalog_entry(self, cat: dict, elapsed_ms: int) -> int:
+        meta = self._animation_meta_for_entry(cat)
+        if meta["phases_available"] <= 1:
+            return 0
+        t = elapsed_ms % meta["total_duration"]
+        for i, threshold in enumerate(meta["cumulative"]):
+            if t < threshold:
+                return i
+        return len(meta["durations"]) - 1
+
+    def sprite_for_catalog_entry(self, cat: dict | None, elapsed_ms: int, pattern_x: int = 0, pattern_y: int = 0):
         if not cat:
             return None
         sprite_ids = [int(s) for s in cat.get("sprite_ids", []) if int(s) > 0]
@@ -465,12 +510,25 @@ class GraphicsCore:
         layers = max(1, int(cat.get("layers", 1)))
         px = min(max(int(pattern_x), 0), pw - 1)
         py = min(max(int(pattern_y), 0), ph - 1)
-        sprites_per_phase = max(1, layers * pw * ph * pd)
-        phases_available = max(1, len(sprite_ids) // sprites_per_phase)
-        phase = self._current_phase_for_catalog_entry(cat, tick) % phases_available
+        meta = self._animation_meta_for_entry(cat)
+        sprites_per_phase = int(meta["sprites_per_phase"])
+        phases_available = int(meta["phases_available"])
+        phase = self._current_phase_for_catalog_entry(cat, elapsed_ms) % phases_available
         idx = phase * sprites_per_phase + (py * pw + px) * layers
         idx = min(max(idx, 0), len(sprite_ids) - 1)
         return self._get_sprite_image_by_id(sprite_ids[idx])
+
+    def animation_total_duration_max_ms(self, cat: dict | None) -> int:
+        if not cat:
+            return 0
+        max_durations = [int(d) for d in cat.get("frame_durations_max", []) if int(d) > 0]
+        if max_durations:
+            return max(1, sum(max_durations))
+        # fallback para catálogos sem min/max por fase
+        avg_durations = [int(d) for d in cat.get("frame_durations", []) if int(d) > 0]
+        if avg_durations:
+            return max(1, sum(avg_durations))
+        return 0
 
     def missile_pattern_for_offset(self, dx: int, dy: int) -> tuple[int, int]:
         if dx == 0 and dy == 0:
@@ -552,6 +610,7 @@ class GraphicsCore:
             self.log(f"Spritesheet atualizado: {sheet_path.name}")
             self.progress("Icone", f"Atualizado {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
+        self.progress("Concluido", "Icones atualizados com sucesso.", 100)
         return idx
 
     def remove_icon(self, idx: int) -> None:
@@ -566,11 +625,13 @@ class GraphicsCore:
             sheet.paste((0, 0, 0, 0), (idx * size, 0, (idx + 1) * size, size))
             sheet.save(sheet_path)
             self.log(f"Icone removido no index {idx}: {sheet_path.name}")
+            self.progress("Icone", f"Removido em {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
+        self.progress("Concluido", "Icone removido com sucesso.", 100)
 
     def move_icon_index(self, source_idx: int, target_idx: int) -> None:
         self.ensure_icon_index_capacity(max(source_idx, target_idx))
-        for rel, size in SPELL_SHEETS:
+        for i, (rel, size) in enumerate(SPELL_SHEETS, start=1):
             sheet_path = self.client_paths()["src_dir"] / rel
             sheet = Image.open(sheet_path).convert("RGBA")
             source_box = (source_idx * size, 0, (source_idx + 1) * size, size)
@@ -580,8 +641,10 @@ class GraphicsCore:
             sheet.paste(source_icon, target_box)
             sheet.paste(target_icon, source_box)
             sheet.save(sheet_path)
+            self.progress("Icone", f"Reordenado em {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
         self.log(f"Icones trocados entre indices {source_idx} e {target_idx}.")
+        self.progress("Concluido", "Reordenacao de icones concluida.", 100)
 
     # ---- build / install (portado fielmente do Tkinter; destrutivo) ------
     def compile_rcc(self) -> None:
