@@ -1,4 +1,4 @@
-# spell-custom-editor
+# Spell Custom Editor
 A tool for editing CipSoft client spell records, icons, and preview data.
 
 ## Requirements
