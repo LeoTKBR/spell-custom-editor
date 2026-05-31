@@ -2,33 +2,40 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QRect, Signal
+from PySide6.QtCore import Qt, QRect, Signal, QPoint
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
 
 class PreviewGrid(QWidget):
-    cellClicked = Signal(int, int)  # gx, gy (absolutos no grid)
+    cellClicked = Signal(int, int, bool)  # gx, gy, ctrl_pressed
+    cellDragged = Signal(int, int, bool)  # gx, gy, ctrl_pressed
+    cellRightClicked = Signal(int, int, QPoint)  # gx, gy, global_pos
 
     CELL = 32
-    COLS = 16
+    COLS = 30
     ROWS = 14
 
     def __init__(self) -> None:
         super().__init__()
-        self.origin = (7, 6)
+        self.origin = (8, 6)
         self.target = None
         self.selected_cell = None
         self.draws: list[tuple[int, int, QPixmap | None]] = []
-        self.setMinimumSize(self.COLS * self.CELL, self.ROWS * self.CELL)
+        self._mouse_down = False
+        self._last_drag_cell: tuple[int, int] | None = None
+        self.setMinimumSize(420, 220)
         self.setStyleSheet("background:#1e1e1e;")
 
-    def _offsets(self) -> tuple[int, int]:
-        w = self.COLS * self.CELL
-        h = self.ROWS * self.CELL
+    def _grid_metrics(self) -> tuple[int, int, int, int, int]:
+        cell_w = max(8, self.width() // self.COLS)
+        cell_h = max(8, self.height() // self.ROWS)
+        cell = max(8, min(cell_w, cell_h))
+        w = self.COLS * cell
+        h = self.ROWS * cell
         ox = max((self.width() - w) // 2, 0)
         oy = max((self.height() - h) // 2, 0)
-        return ox, oy
+        return cell, w, h, ox, oy
 
     def set_plan(self, origin, target, selected_cell, draws) -> None:
         self.origin = origin
@@ -39,10 +46,7 @@ class PreviewGrid(QWidget):
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
-        cell = self.CELL
-        w = self.COLS * cell
-        h = self.ROWS * cell
-        ox_px, oy_px = self._offsets()
+        cell, w, h, ox_px, oy_px = self._grid_metrics()
         painter.fillRect(QRect(ox_px, oy_px, w, h), QColor("#1e1e1e"))
 
         painter.setPen(QPen(QColor("#3b3b3b")))
@@ -78,14 +82,48 @@ class PreviewGrid(QWidget):
                 painter.drawText(QRect(ox_px + draw_gx * cell, oy_px + draw_gy * cell, cell, cell), Qt.AlignmentFlag.AlignCenter, "?")
                 continue
             # Ancora no canto inferior-direito da tile base (estilo Tibia).
-            draw_px = ox_px + (draw_gx + 1) * cell - pix.width()
-            draw_py = oy_px + (draw_gy + 1) * cell - pix.height()
-            painter.drawPixmap(draw_px, draw_py, pix)
+            if cell >= self.CELL:
+                draw_px = ox_px + (draw_gx + 1) * cell - pix.width()
+                draw_py = oy_px + (draw_gy + 1) * cell - pix.height()
+                painter.drawPixmap(draw_px, draw_py, pix)
+            else:
+                # Em tamanhos menores, desenha miniatura escalada para manter legibilidade sem scroll.
+                scaled = pix.scaled(cell, cell, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                draw_px = ox_px + draw_gx * cell + (cell - scaled.width()) // 2
+                draw_py = oy_px + draw_gy * cell + (cell - scaled.height()) // 2
+                painter.drawPixmap(draw_px, draw_py, scaled)
         painter.end()
 
     def mousePressEvent(self, event) -> None:
-        ox_px, oy_px = self._offsets()
-        gx = int((event.position().x() - ox_px) // self.CELL)
-        gy = int((event.position().y() - oy_px) // self.CELL)
-        if 0 <= gx < self.COLS and 0 <= gy < self.ROWS:
-            self.cellClicked.emit(gx, gy)
+        cell, _w, _h, ox_px, oy_px = self._grid_metrics()
+        gx = int((event.position().x() - ox_px) // cell)
+        gy = int((event.position().y() - oy_px) // cell)
+        inside = 0 <= gx < self.COLS and 0 <= gy < self.ROWS
+        if event.button() == Qt.MouseButton.RightButton and inside:
+            self.cellRightClicked.emit(gx, gy, event.globalPosition().toPoint())
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        self._mouse_down = True
+        if inside:
+            self._last_drag_cell = (gx, gy)
+            ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+            self.cellClicked.emit(gx, gy, ctrl)
+
+    def mouseMoveEvent(self, event) -> None:
+        if not self._mouse_down:
+            return
+        cell, _w, _h, ox_px, oy_px = self._grid_metrics()
+        gx = int((event.position().x() - ox_px) // cell)
+        gy = int((event.position().y() - oy_px) // cell)
+        if not (0 <= gx < self.COLS and 0 <= gy < self.ROWS):
+            return
+        if self._last_drag_cell == (gx, gy):
+            return
+        self._last_drag_cell = (gx, gy)
+        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        self.cellDragged.emit(gx, gy, ctrl)
+
+    def mouseReleaseEvent(self, _event) -> None:
+        self._mouse_down = False
+        self._last_drag_cell = None

@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 
@@ -47,12 +48,73 @@ class GraphicsCore:
         self._object_msgs: dict[int, object] = {}
         self._object_entry_cache: dict[int, dict] = {}
         self._anim_meta_cache: dict[tuple, dict] = {}
+        self._field_object_ids: set[int] = set()
         self._app_module = None
         self._appearances = None
 
         # Callbacks de UI (ligados a sinais Qt -> thread-safe).
         self.log = lambda msg: None
         self.progress = lambda step, detail, value: None
+        self.load_field_objects_json()
+
+    def field_objects_json_path(self) -> Path:
+        return Path(__file__).resolve().parent / "field_objects.json"
+
+    def load_field_objects_json(self, path: Path | None = None) -> int:
+        target = path or self.field_objects_json_path()
+        if not target.exists():
+            self._field_object_ids = set()
+            return 0
+        try:
+            parsed = json.loads(target.read_text(encoding="utf-8"))
+            ids = parsed.get("field_object_ids", []) if isinstance(parsed, dict) else []
+            self._field_object_ids = {int(x) for x in ids if int(x) > 0}
+            self.log(f"JSON de fields carregado: {len(self._field_object_ids)} ids.")
+            return len(self._field_object_ids)
+        except Exception as exc:  # noqa: BLE001
+            self._field_object_ids = set()
+            self.log(f"[WARN] Falha ao ler JSON de fields: {exc}")
+            return 0
+
+    def generate_field_objects_json_from_items_xml(self, items_xml_path: Path, output_json_path: Path | None = None) -> int:
+        if not items_xml_path.exists():
+            raise RuntimeError(f"items.xml nao encontrado: {items_xml_path}")
+        tree = ET.parse(items_xml_path)
+        root = tree.getroot()
+        field_ids: set[int] = set()
+
+        for item in root.findall(".//item"):
+            has_field_attr = False
+            for attr in item.findall("attribute"):
+                if safe_text_value(attr.get("key", "")).strip().lower() == "field":
+                    has_field_attr = True
+                    break
+            if not has_field_attr:
+                continue
+            if item.get("id"):
+                try:
+                    iid = int(item.get("id", "0"))
+                    if iid > 0:
+                        field_ids.add(iid)
+                except Exception:
+                    pass
+                continue
+            # Suporte para ranges (fromid/toid) usados em alguns items.xml
+            try:
+                from_id = int(item.get("fromid", "0"))
+                to_id = int(item.get("toid", "0"))
+            except Exception:
+                from_id = to_id = 0
+            if from_id > 0 and to_id >= from_id:
+                for iid in range(from_id, to_id + 1):
+                    field_ids.add(iid)
+
+        out_path = output_json_path or self.field_objects_json_path()
+        payload = {"field_object_ids": sorted(field_ids)}
+        out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._field_object_ids = set(field_ids)
+        self.log(f"JSON de fields atualizado: {out_path} ({len(field_ids)} ids).")
+        return len(field_ids)
 
     # ---- paths -----------------------------------------------------------
     def client_paths(self) -> dict[str, Path]:
@@ -221,9 +283,28 @@ class GraphicsCore:
             self._effects_by_id = {int(e["id"]): e for e in effects}
             self._missiles_by_id = {int(m["id"]): m for m in missiles}
             self._object_msgs = object_msgs
+            self._warmup_object_preview_cache()
             self.log(f"Catalogo carregado: {len(effects)} effects, {len(missiles)} missiles, {len(object_msgs)} objects.")
         except Exception as exc:  # noqa: BLE001
             self.log(f"[WARN] Falha ao carregar catalogo FX/Missiles: {exc}")
+
+    def _warmup_object_preview_cache(self) -> None:
+        # Precarrega apenas os objetos que entram na lista (filtrados por JSON, quando existir).
+        if self._field_object_ids:
+            selected_ids = sorted([int(oid) for oid in self._field_object_ids if int(oid) in self._object_msgs])
+        else:
+            selected_ids = sorted(int(oid) for oid in self._object_msgs.keys())
+        total = len(selected_ids)
+        if total <= 0:
+            return
+        for i, oid in enumerate(selected_ids, start=1):
+            try:
+                cat = self.object_by_id(oid)
+                _ = self.sprite_for_catalog_entry(cat, 0, 0, 0)
+            except Exception:
+                continue
+            if i % 200 == 0 or i == total:
+                self.progress("Catalogo", f"Precarregando objetos ({i}/{total})...", 80 + int((i / total) * 15))
 
     def _appearances_dat_path(self, catalog_path: Path, assets_dir: Path) -> Path | None:
         try:
@@ -426,6 +507,27 @@ class GraphicsCore:
         entry = self._appearance_entry(msg)
         self._object_entry_cache[oid] = entry
         return entry
+
+    def object_entries(self) -> list[dict]:
+        out = []
+        for oid, msg in self._object_msgs.items():
+            if self._field_object_ids and int(oid) not in self._field_object_ids:
+                continue
+            out.append({
+                "id": int(oid),
+                "name": safe_text_value(getattr(msg, "name", "")),
+            })
+        out.sort(key=lambda x: int(x["id"]))
+        return out
+
+    def _is_field_object(self, msg) -> bool:
+        flags = getattr(msg, "flags", None)
+        if flags is None:
+            return False
+        try:
+            return bool(getattr(flags, "avoid", False))
+        except Exception:
+            return False
 
     def max_effect_id(self) -> int:
         return max([int(e.get("id", 1)) for e in self.effects_catalog], default=1)

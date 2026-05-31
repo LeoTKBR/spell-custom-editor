@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import copy
 import json
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QSettings, QUrl, QElapsedTimer
-from PySide6.QtGui import QAction, QFont, QPixmap, QDesktopServices
+from PySide6.QtCore import Qt, QTimer, Signal, QSettings, QUrl, QElapsedTimer, QPoint, QSize
+from PySide6.QtGui import QAction, QFont, QPixmap, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -20,16 +21,20 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QMenu,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
     QSpinBox,
     QSplitter,
+    QStyle,
     QTabWidget,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -69,6 +74,12 @@ class MainWindow(QMainWindow):
         self._anim_tick = 0
         self._render_sig = None
         self._pixmap_cache: dict[int, QPixmap] = {}
+        self._preview_undo_stack: list[tuple[str, dict]] = []
+        self._preview_redo_stack: list[tuple[str, dict]] = []
+        self._grid_gesture_snapshot_taken = False
+        self._grid_tool_mode = "Adicionar"
+        self._asset_picker_entries: list[dict] = []
+        self._asset_icon_last_tick = -1
 
         self._build_ui()
         self._load_ui_settings()
@@ -515,49 +526,103 @@ class MainWindow(QMainWindow):
 
     def _build_preview_grid_tab(self) -> QWidget:
         tab = QWidget()
-        lay = QHBoxLayout(tab)
+        lay = QVBoxLayout(tab)
 
-        side = QVBoxLayout()
-        self.render_objecttype = QCheckBox("Renderizar objecttype (experimental)")
+        grid_box = QGroupBox("Preview Visual 30x14 (responsivo)")
+        gl = QVBoxLayout(grid_box)
+        row = QHBoxLayout()
+        left_panel = QVBoxLayout()
+        left_panel.addWidget(QLabel("Tipo de lista"))
+        self.asset_kind_combo = QComboBox()
+        self.asset_kind_combo.addItems(["Effect", "Missile", "Object"])
+        self.asset_kind_combo.currentIndexChanged.connect(self._refresh_asset_picker_list)
+        left_panel.addWidget(self.asset_kind_combo)
+        self.asset_search = QLineEdit()
+        self.asset_search.setPlaceholderText("Buscar por id/nome...")
+        self.asset_search.textChanged.connect(self._refresh_asset_picker_list)
+        left_panel.addWidget(self.asset_search)
+        self.asset_list = QListWidget()
+        self.asset_list.currentRowChanged.connect(self._on_asset_picker_selected)
+        self.asset_list.setMinimumWidth(280)
+        self.asset_list.setMaximumWidth(360)
+        left_panel.addWidget(self.asset_list, 1)
+        self.btn_update_field_json = QPushButton("Atualizar JSON Fields")
+        self.btn_update_field_json.clicked.connect(self.on_update_field_objects_json)
+        left_panel.addWidget(self.btn_update_field_json)
+        left_info = QLabel("Clique esquerdo: adiciona no grid\nCtrl + clique esquerdo: remove")
+        left_info.setWordWrap(True)
+        left_panel.addWidget(left_info)
+        left_w = QWidget()
+        left_w.setLayout(left_panel)
+        row.addWidget(left_w, 0)
+
+        right_panel = QVBoxLayout()
+        tools = QHBoxLayout()
+        self.btn_mode_target = self._make_grid_tool_button("Definir Target", "SP_CommandLink", "Definir Target")
+        self.btn_mode_target.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        tools.addWidget(self.btn_mode_target)
+        self.btn_mode_add = self._make_grid_tool_button("Adicionar", "SP_DialogYesButton", "Adicionar")
+        self.btn_mode_add.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        tools.addWidget(self.btn_mode_add)
+        self.btn_grid_undo = QToolButton()
+        self.btn_grid_undo.setText("Desfazer")
+        self.btn_grid_undo.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
+        self.btn_grid_undo.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.btn_grid_undo.clicked.connect(self._undo_preview_edit)
+        tools.addWidget(self.btn_grid_undo)
+        self.btn_grid_redo = QToolButton()
+        self.btn_grid_redo.setText("Refazer")
+        self.btn_grid_redo.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward))
+        self.btn_grid_redo.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.btn_grid_redo.clicked.connect(self._redo_preview_edit)
+        tools.addWidget(self.btn_grid_redo)
+        tools.addSpacing(14)
+        self.render_objecttype = QCheckBox("Renderizar objecttype")
         self.render_objecttype.setChecked(True)
         self.render_objecttype.stateChanged.connect(lambda *_: self.update_preview_grid(force=True))
-        side.addWidget(self.render_objecttype)
-
-        fx_box = QGroupBox("Effect")
-        fl = QHBoxLayout(fx_box)
-        self.effect_spin = QSpinBox()
-        self.effect_spin.setRange(1, 1)
-        fl.addWidget(self.effect_spin)
-        bfx = QPushButton("Aplicar")
-        bfx.clicked.connect(self.apply_effect_id)
-        fl.addWidget(bfx)
-        side.addWidget(fx_box)
-
-        ms_box = QGroupBox("Missile")
-        ml = QHBoxLayout(ms_box)
-        self.missile_spin = QSpinBox()
-        self.missile_spin.setRange(1, 1)
-        ml.addWidget(self.missile_spin)
-        bms = QPushButton("Aplicar")
-        bms.clicked.connect(self.apply_missile_id)
-        ml.addWidget(bms)
-        side.addWidget(ms_box)
-        side.addStretch(1)
-        side_w = QWidget()
-        side_w.setLayout(side)
-        side_w.setMinimumWidth(200)
-        side_w.setMaximumWidth(280)
-        lay.addWidget(side_w)
-
-        grid_box = QGroupBox("Preview Visual 16x14 (32px)")
-        gl = QVBoxLayout(grid_box)
+        tools.addWidget(self.render_objecttype)
+        tools.addStretch(1)
+        right_panel.addLayout(tools)
+        self.grid_mode_label = QLabel("Modo atual: Adicionar | Clique: adiciona | Ctrl+Clique: remove")
+        right_panel.addWidget(self.grid_mode_label)
         self.preview_grid = PreviewGrid()
         self.preview_grid.cellClicked.connect(self.on_grid_click)
-        gl.addWidget(self.preview_grid, 1)
+        self.preview_grid.cellDragged.connect(self.on_grid_drag)
+        self.preview_grid.cellRightClicked.connect(self.on_grid_right_click)
+        right_panel.addWidget(self.preview_grid, 1)
+        right_w = QWidget()
+        right_w.setLayout(right_panel)
+        row.addWidget(right_w, 1)
+        gl.addLayout(row, 1)
         lay.addWidget(grid_box, 1)
-        lay.setStretch(0, 0)
-        lay.setStretch(1, 1)
+        self._set_grid_mode("Adicionar")
         return tab
+
+    def _standard_icon_by_name(self, icon_name: str):
+        enum_value = getattr(QStyle.StandardPixmap, icon_name, None)
+        if enum_value is None:
+            enum_value = QStyle.StandardPixmap.SP_FileIcon
+        return self.style().standardIcon(enum_value)
+
+    def _make_grid_tool_button(self, text: str, icon_name: str, mode: str) -> QToolButton:
+        btn = QToolButton()
+        btn.setText(text)
+        btn.setIcon(self._standard_icon_by_name(icon_name))
+        btn.setCheckable(True)
+        btn.clicked.connect(lambda *_: self._set_grid_mode(mode))
+        return btn
+
+    def _set_grid_mode(self, mode: str) -> None:
+        self._grid_tool_mode = mode
+        mapping = {
+            "Adicionar": getattr(self, "btn_mode_add", None),
+            "Definir Target": getattr(self, "btn_mode_target", None),
+        }
+        for k, b in mapping.items():
+            if b is not None:
+                b.setChecked(k == mode)
+        if hasattr(self, "grid_mode_label"):
+            self.grid_mode_label.setText(f"Modo atual: {mode} | Clique: adiciona | Ctrl+Clique: remove")
 
     # ===================================================================
     # Infra: log/progress/worker/estado
@@ -1174,27 +1239,360 @@ class MainWindow(QMainWindow):
     # Grid de preview
     # ===================================================================
     def _refresh_effect_missile_spin(self) -> None:
-        me = max(1, self.core.max_effect_id())
-        mm = max(1, self.core.max_missile_id())
-        self.effect_spin.setRange(1, me)
-        self.missile_spin.setRange(1, mm)
+        self.core.load_field_objects_json()
+        self._refresh_asset_picker_entries()
+        self._refresh_asset_picker_list()
 
-    def apply_effect_id(self) -> None:
-        self.action_type.setCurrentText("fieldEffect")
-        self.action_id.setText(str(self.effect_spin.value()))
-        self.update_preview_grid(force=True)
+    def on_update_field_objects_json(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Selecione o diretorio que contem o items.xml")
+        if not folder:
+            return
+        items_xml = Path(folder) / "items.xml"
+        if not items_xml.exists():
+            QMessageBox.warning(self, "Atencao", f"Nao encontrei items.xml em:\n{folder}")
+            return
 
-    def apply_missile_id(self) -> None:
-        self.action_type.setCurrentText("missile")
-        self.action_id.setText(str(self.missile_spin.value()))
-        self.update_preview_grid(force=True)
+        def work():
+            self._last_field_count = self.core.generate_field_objects_json_from_items_xml(items_xml)
 
-    def on_grid_click(self, gx: int, gy: int) -> None:
+        def done():
+            self.core.load_field_objects_json()
+            self._refresh_asset_picker_entries()
+            self._refresh_asset_picker_list()
+            self.update_preview_grid(force=True)
+            QMessageBox.information(
+                self,
+                "JSON Fields",
+                f"JSON atualizado com {getattr(self, '_last_field_count', 0)} objetos field.",
+            )
+
+        self.run_bg(work, done)
+
+    def _refresh_asset_picker_entries(self) -> None:
+        self._asset_picker_entries = []
+        for e in self.core.effects_catalog:
+            self._asset_picker_entries.append({"kind": "Effect", "id": int(e.get("id", 0)), "name": safe_text_value(e.get("name", ""))})
+        for m in self.core.missiles_catalog:
+            self._asset_picker_entries.append({"kind": "Missile", "id": int(m.get("id", 0)), "name": safe_text_value(m.get("name", ""))})
+        for obj in self.core.object_entries():
+            self._asset_picker_entries.append({"kind": "Object", "id": int(obj.get("id", 0)), "name": safe_text_value(obj.get("name", ""))})
+
+    def _refresh_asset_picker_list(self) -> None:
+        if not hasattr(self, "asset_list"):
+            return
+        kind = self.asset_kind_combo.currentText().strip() if hasattr(self, "asset_kind_combo") else "Effect"
+        term = self.asset_search.text().strip().lower() if hasattr(self, "asset_search") else ""
+        self.asset_list.blockSignals(True)
+        self.asset_list.clear()
+        self.asset_list.setIconSize(QSize(28, 28))
+        for entry in self._asset_picker_entries:
+            if entry["kind"] != kind:
+                continue
+            if entry["kind"] == "Effect":
+                label = f"{entry['id']}"
+            elif entry["kind"] == "Missile":
+                label = f"{entry['id']}"
+            else:
+                label = f"{entry['id']} - {entry['name'] or '(sem nome)'}"
+            if term and term not in label.lower():
+                continue
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            pix = self._asset_list_preview_pixmap(entry, 0)
+            if pix is not None:
+                item.setIcon(QIcon(pix))
+            self.asset_list.addItem(item)
+        self.asset_list.blockSignals(False)
+        if self.asset_list.count() > 0:
+            self.asset_list.setCurrentRow(0)
+        self._update_asset_picker_icons(force=True)
+
+    def _asset_list_preview_pixmap(self, entry: dict, elapsed_ms: int) -> QPixmap | None:
+        kind = safe_text_value(entry.get("kind", ""))
+        sid = int(entry.get("id", 0) or 0)
+        pil_img = None
+        if kind == "Effect":
+            cat = self.core.effect_by_id(sid)
+            pil_img = self.core.sprite_for_catalog_entry(cat, elapsed_ms, 0, 0)
+        elif kind == "Missile":
+            cat = self.core.missile_by_id(sid)
+            pil_img = self.core.sprite_for_catalog_entry(cat, 0, 2, 1)
+        elif kind == "Object":
+            cat = self.core.object_by_id(sid)
+            pil_img = self.core.sprite_for_catalog_entry(cat, elapsed_ms, 0, 0)
+        if pil_img is None:
+            return None
+        return pil_to_qpixmap(pil_img)
+
+    def _update_asset_picker_icons(self, force: bool = False) -> None:
+        if not hasattr(self, "asset_list") or self.asset_list.count() == 0:
+            return
+        tick = self._anim_tick // 3
+        if not force and tick == self._asset_icon_last_tick:
+            return
+        self._asset_icon_last_tick = tick
+        elapsed_ms = int(self._anim_elapsed.elapsed()) if self._anim_elapsed.isValid() else (self._anim_tick * 33)
+        for i in range(self.asset_list.count()):
+            item = self.asset_list.item(i)
+            if item is None:
+                continue
+            entry = item.data(Qt.ItemDataRole.UserRole) or {}
+            pix = self._asset_list_preview_pixmap(entry, elapsed_ms)
+            if pix is not None:
+                item.setIcon(QIcon(pix))
+
+    def _on_asset_picker_selected(self, row: int) -> None:
+        if row < 0:
+            return
+        item = self.asset_list.item(row)
+        if item is None:
+            return
+        entry = item.data(Qt.ItemDataRole.UserRole) or {}
+        kind = safe_text_value(entry.get("kind", ""))
+        sid = entry.get("id", 0)
+        if kind == "Effect":
+            self.action_type.setCurrentText("fieldEffect")
+            self.action_id.setText(str(int(sid)))
+        elif kind == "Missile":
+            self.action_type.setCurrentText("missile")
+            self.action_id.setText(str(int(sid)))
+        elif kind == "Object":
+            self.action_type.setCurrentText("objecttype")
+            self.action_id.setText(str(int(sid)))
+
+    def on_grid_click(self, gx: int, gy: int, ctrl: bool) -> None:
+        self._grid_gesture_snapshot_taken = False
+        self._on_grid_edit(gx, gy, dragged=False, ctrl=ctrl)
+
+    def on_grid_drag(self, gx: int, gy: int, ctrl: bool) -> None:
+        self._on_grid_edit(gx, gy, dragged=True, ctrl=ctrl)
+
+    def on_grid_right_click(self, gx: int, gy: int, global_pos: QPoint) -> None:
+        menu = QMenu(self)
+        act_select_here = menu.addAction("Selecionar ação aqui")
+        act_add_effect_here = menu.addAction("Adicionar Effect aqui")
+        act_add_missile_here = menu.addAction("Adicionar Missile aqui")
+        act_add_object_here = menu.addAction("Adicionar Object aqui")
+        act_add_current_here = menu.addAction("Adicionar ação atual aqui")
+        act_remove_here = menu.addAction("Remover ação aqui")
+        act_target_here = menu.addAction("Definir Target aqui")
+        menu.addSeparator()
+        act_mode_add = menu.addAction("Trocar modo para Adicionar")
+        act_mode_target = menu.addAction("Trocar modo para Definir Target")
+        menu.addSeparator()
+        act_undo = menu.addAction("Desfazer")
+        act_redo = menu.addAction("Refazer")
+        selected = menu.exec(global_pos)
+        if selected is None:
+            return
+        if selected == act_undo:
+            self._undo_preview_edit()
+            return
+        if selected == act_redo:
+            self._redo_preview_edit()
+            return
+        if selected == act_select_here:
+            self._select_action_at_grid(gx, gy)
+            return
+        if selected == act_add_effect_here:
+            self.asset_kind_combo.setCurrentText("Effect")
+            self._refresh_asset_picker_list()
+            self._set_grid_mode("Adicionar")
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
+            return
+        if selected == act_add_missile_here:
+            self.asset_kind_combo.setCurrentText("Missile")
+            self._refresh_asset_picker_list()
+            self._set_grid_mode("Adicionar")
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
+            return
+        if selected == act_add_object_here:
+            self.asset_kind_combo.setCurrentText("Object")
+            self._refresh_asset_picker_list()
+            self._set_grid_mode("Adicionar")
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
+            return
+        if selected == act_add_current_here:
+            self._set_grid_mode("Adicionar")
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
+            return
+        if selected == act_remove_here:
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=True)
+            return
+        if selected == act_target_here:
+            self._set_grid_mode("Definir Target")
+            self._grid_gesture_snapshot_taken = False
+            self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
+            return
+        mode_map = {
+            act_mode_add: "Adicionar",
+            act_mode_target: "Definir Target",
+        }
+        mode = mode_map.get(selected)
+        if mode is None:
+            return
+        self._set_grid_mode(mode)
+
+    def _on_grid_edit(self, gx: int, gy: int, dragged: bool, ctrl: bool) -> None:
         ox, oy = self.preview_grid.origin
+        ax = gx - ox
+        ay = gy - oy
         self.preview_grid.selected_cell = (gx, gy)
-        self.action_x.setText(str(gx - ox))
-        self.action_y.setText(str(gy - oy))
+        mode = self._grid_tool_mode
+        ts = self.get_selected_timestamp()
+        if ts is None:
+            QMessageBox.warning(self, "Atencao", "Selecione um timestamp antes de editar no grid.")
+            self.action_x.setText(str(ax))
+            self.action_y.setText(str(ay))
+            self.update_preview_grid(force=True)
+            return
+
+        # Clique esquerdo sempre seleciona.
+        if not dragged:
+            self._select_action_at_grid(gx, gy)
+
+        if ctrl:
+            self._push_preview_undo_if_needed()
+            idx = self._find_action_index_at_offset(ts, ax, ay)
+            if idx >= 0:
+                ts.get("actions", []).pop(idx)
+                self.refresh_actions_list()
+            self.update_preview_grid(force=True)
+            return
+
+        if dragged and mode != "Definir Target":
+            self._push_preview_undo_if_needed()
+            sel = self.actions_list.currentRow()
+            actions = ts.get("actions", [])
+            if sel < 0 or sel >= len(actions):
+                return
+            actions[sel]["x"] = ax
+            actions[sel]["y"] = ay
+            self.action_x.setText(str(ax))
+            self.action_y.setText(str(ay))
+            self.refresh_actions_list()
+            self.actions_list.setCurrentRow(sel)
+            self.update_preview_grid(force=True)
+            return
+
+        if mode == "Adicionar":
+            self._push_preview_undo_if_needed()
+            self.action_x.setText(str(ax))
+            self.action_y.setText(str(ay))
+            ts.setdefault("actions", []).append(self._build_action_from_form())
+            self.refresh_actions_list()
+            self.actions_list.setCurrentRow(max(0, self.actions_list.count() - 1))
+            self.update_preview_grid(force=True)
+            return
+
+        if mode == "Definir Target":
+            self._push_preview_undo_if_needed()
+            rec = self._current_preview()
+            if rec is None:
+                return
+            target = None
+            for action in rec.setdefault("initActions", []):
+                if action.get("action") == "target":
+                    target = action
+                    break
+            if target is None:
+                rec["initActions"].append({"action": "target", "x": ax, "y": ay})
+            else:
+                target["x"] = ax
+                target["y"] = ay
+            self.refresh_init_actions_list()
+            self.update_preview_grid(force=True)
+            return
+
+        self.action_x.setText(str(ax))
+        self.action_y.setText(str(ay))
         self.update_preview_grid(force=True)
+
+    def _select_action_at_grid(self, gx: int, gy: int) -> None:
+        ox, oy = self.preview_grid.origin
+        ax = gx - ox
+        ay = gy - oy
+        self.action_x.setText(str(ax))
+        self.action_y.setText(str(ay))
+        ts = self.get_selected_timestamp()
+        if ts is None:
+            self.update_preview_grid(force=True)
+            return
+        idx = self._find_action_index_at_offset(ts, ax, ay)
+        if idx >= 0:
+            self.actions_list.setCurrentRow(idx)
+        self.update_preview_grid(force=True)
+
+    def _find_action_index_at_offset(self, ts: dict, ax: int, ay: int) -> int:
+        for i, action in enumerate(ts.get("actions", [])):
+            try:
+                if int(action.get("x", 0)) == ax and int(action.get("y", 0)) == ay:
+                    return i
+            except Exception:
+                continue
+        return -1
+
+    def _find_matching_action_at_offset(self, ts: dict, ax: int, ay: int, ref: dict) -> int:
+        for i, action in enumerate(ts.get("actions", [])):
+            try:
+                if int(action.get("x", 0)) != ax or int(action.get("y", 0)) != ay:
+                    continue
+                if safe_text_value(action.get("action", "")) != safe_text_value(ref.get("action", "")):
+                    continue
+                aid_a = action.get("effectID", action.get("missileID", action.get("objecttypeID", None)))
+                aid_b = ref.get("effectID", ref.get("missileID", ref.get("objecttypeID", None)))
+                if aid_a == aid_b:
+                    return i
+            except Exception:
+                continue
+        return -1
+
+    def _push_preview_undo_if_needed(self) -> None:
+        if self._grid_gesture_snapshot_taken:
+            return
+        rec = self._current_preview()
+        if rec is None or self.selected_preview_key is None:
+            return
+        self._preview_undo_stack.append((self.selected_preview_key, copy.deepcopy(rec)))
+        if len(self._preview_undo_stack) > 100:
+            self._preview_undo_stack.pop(0)
+        self._preview_redo_stack.clear()
+        self._grid_gesture_snapshot_taken = True
+
+    def _undo_preview_edit(self) -> None:
+        if not self._preview_undo_stack or self.selected_preview_key is None:
+            return
+        rec = self._current_preview()
+        if rec is not None:
+            self._preview_redo_stack.append((self.selected_preview_key, copy.deepcopy(rec)))
+            if len(self._preview_redo_stack) > 100:
+                self._preview_redo_stack.pop(0)
+        key, snapshot = self._preview_undo_stack.pop()
+        self.core.previews_data[key] = copy.deepcopy(snapshot)
+        if key == self.selected_preview_key:
+            self.refresh_timestamps_list()
+            self.refresh_init_actions_list()
+            self.update_preview_grid(force=True)
+
+    def _redo_preview_edit(self) -> None:
+        if not self._preview_redo_stack or self.selected_preview_key is None:
+            return
+        rec = self._current_preview()
+        if rec is not None:
+            self._preview_undo_stack.append((self.selected_preview_key, copy.deepcopy(rec)))
+            if len(self._preview_undo_stack) > 100:
+                self._preview_undo_stack.pop(0)
+        key, snapshot = self._preview_redo_stack.pop()
+        self.core.previews_data[key] = copy.deepcopy(snapshot)
+        if key == self.selected_preview_key:
+            self.refresh_timestamps_list()
+            self.refresh_init_actions_list()
+            self.update_preview_grid(force=True)
 
     def _pixmap_for(self, pil_img):
         if pil_img is None:
@@ -1220,6 +1618,7 @@ class MainWindow(QMainWindow):
 
     def _on_anim_tick(self) -> None:
         self._anim_tick += 1
+        self._update_asset_picker_icons()
         self.update_preview_grid()
 
     def update_preview_grid(self, force: bool = False) -> None:
