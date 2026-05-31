@@ -67,3 +67,20 @@ You can:
 - Edit in the visual grid editor
 
 Note: this feature is still under development and may have some issues.
+
+## Screenshots
+
+### Initial Screen (Icon Editor)
+![Initial Screen - Icon Editor](docs/screenshots/01-initial-icon-editor.png)
+
+### Spells Editor
+![Spells Editor](docs/screenshots/02-spells-editor.png)
+
+### Spell Preview Editor (Structural)
+![Spell Preview Editor - Structural](docs/screenshots/03-spell-preview-structural.png)
+
+### Spell Preview Editor (Grid FX/Missiles)
+![Spell Preview Editor - Grid FX/Missiles](docs/screenshots/04-spell-preview-grid.png)
+
+### Full Editing Workflow
+![Full Editing Workflow](docs/screenshots/05-full-workflow.png)
