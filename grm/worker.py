@@ -1,4 +1,4 @@
-"""Worker generico: roda uma funcao em thread separada e sinaliza ok/falha."""
+﻿"""Generic worker: runs a function in a separate thread and signals success/failure."""
 
 from __future__ import annotations
 
@@ -23,3 +23,5 @@ class Worker(QThread):
             self.failed.emit(str(exc))
         else:
             self.ok.emit()
+
+

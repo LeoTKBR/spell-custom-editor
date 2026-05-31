@@ -1,4 +1,4 @@
-"""Entry point da aplicacao Qt. Assume dependencias ja garantidas pelo launcher."""
+﻿"""Qt application entry point. Assumes dependencies are already handled by the launcher."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ def main() -> None:
     apply_theme(app, dark=True)
     app.setFont(QFont("Segoe UI", 9))
     window = MainWindow()
-    window._append_log("Pronto. Selecione a pasta do cliente e clique em 'Carregar Cliente'.")
+    window._append_log("Ready. Select the client folder and click 'Load Client'.")
     window.show()
     sys.exit(app.exec())
+

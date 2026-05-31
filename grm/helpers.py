@@ -1,4 +1,4 @@
-"""Funcoes utilitarias: RCC, JSON embedado em client.exe, recursos Qt, conversao PIL->Qt."""
+﻿"""Utility functions: RCC, JSON embedded in client.exe, Qt resources, PIL-to-Qt conversion."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def qt_rcc_exe() -> Path:
 
     candidate = Path(PySide6.__file__).resolve().parent / "rcc.exe"
     if not candidate.exists():
-        raise RuntimeError(f"Qt rcc.exe nao encontrado: {candidate}")
+        raise RuntimeError(f"Qt rcc.exe not found: {candidate}")
     return candidate
 
 
@@ -61,7 +61,7 @@ def find_spell_json_resources(data: bytes) -> dict[str, tuple[int, int, bytes]]:
             found["spells-previews.json"] = (offset, compressed_size, raw)
     missing = {"spells.json", "spells-previews.json"} - set(found)
     if missing:
-        raise RuntimeError(f"Nao foi possivel localizar recursos embedados: {', '.join(sorted(missing))}")
+        raise RuntimeError(f"Could not locate embedded resources: {', '.join(sorted(missing))}")
     return found
 
 
@@ -134,3 +134,4 @@ def pil_to_qpixmap(img: Image.Image) -> QPixmap:
     data = img.tobytes("raw", "RGBA")
     qimg = QImage(data, img.width, img.height, QImage.Format.Format_RGBA8888)
     return QPixmap.fromImage(qimg.copy())
+

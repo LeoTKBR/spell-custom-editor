@@ -1,4 +1,4 @@
-"""Nucleo: toda a logica de IO/parse/sprites/build, SEM widgets (roda em thread)."""
+﻿"""Core: all IO/parse/sprites/build logic, WITHOUT widgets (runs in thread)."""
 
 from __future__ import annotations
 
@@ -69,16 +69,16 @@ class GraphicsCore:
             parsed = json.loads(target.read_text(encoding="utf-8"))
             ids = parsed.get("field_object_ids", []) if isinstance(parsed, dict) else []
             self._field_object_ids = {int(x) for x in ids if int(x) > 0}
-            self.log(f"JSON de fields carregado: {len(self._field_object_ids)} ids.")
+            self.log(f"Fields JSON loaded: {len(self._field_object_ids)} ids.")
             return len(self._field_object_ids)
         except Exception as exc:  # noqa: BLE001
             self._field_object_ids = set()
-            self.log(f"[WARN] Falha ao ler JSON de fields: {exc}")
+            self.log(f"[WARN] Failed to read fields JSON: {exc}")
             return 0
 
     def generate_field_objects_json_from_items_xml(self, items_xml_path: Path, output_json_path: Path | None = None) -> int:
         if not items_xml_path.exists():
-            raise RuntimeError(f"items.xml nao encontrado: {items_xml_path}")
+            raise RuntimeError(f"items.xml not found: {items_xml_path}")
         tree = ET.parse(items_xml_path)
         root = tree.getroot()
         field_ids: set[int] = set()
@@ -113,17 +113,17 @@ class GraphicsCore:
         payload = {"field_object_ids": sorted(field_ids)}
         out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         self._field_object_ids = set(field_ids)
-        self.log(f"JSON de fields atualizado: {out_path} ({len(field_ids)} ids).")
+        self.log(f"Fields JSON updated: {out_path} ({len(field_ids)} ids).")
         return len(field_ids)
 
     # ---- paths -----------------------------------------------------------
     def client_paths(self) -> dict[str, Path]:
         raw_base = (self.client_dir or "").strip()
         if not raw_base:
-            raise RuntimeError("Selecione a pasta do cliente antes de carregar.")
+            raise RuntimeError("Select the client folder before loading.")
         base = Path(raw_base).resolve()
         if not base.exists() or not base.is_dir():
-            raise RuntimeError("A pasta do cliente selecionada e invalida.")
+            raise RuntimeError("Selected client folder is invalid.")
         paths = {
             "base": base,
             "source_rcc": base / "bin" / "graphics_resources.rcc",
@@ -139,7 +139,7 @@ class GraphicsCore:
             missing.append(str(paths["client_exe"]))
         if missing:
             raise RuntimeError(
-                "Pasta do cliente invalida. Arquivos obrigatorios nao encontrados:\n- "
+                "Invalid client folder. Required files not found:\n- "
                 + "\n- ".join(missing)
             )
         return paths
@@ -147,17 +147,17 @@ class GraphicsCore:
     # ---- carregamento ----------------------------------------------------
     def load_client(self) -> None:
         p = self.client_paths()
-        self.progress("Backup automatico", "Criando backup inicial...", 5)
+        self.progress("Automatic backup", "Creating initial backup...", 5)
         self.auto_backup_on_load(p)
-        self.progress("Decompilar RCC", "Extraindo arquivos...", 30)
+        self.progress("Decompile RCC", "Extracting files...", 30)
         self.decompile_rcc()
-        self.progress("Extrair JSON", "Lendo client.exe e extraindo JSON...", 60)
+        self.progress("Extract JSON", "Reading client.exe and extracting JSON...", 60)
         self.extract_spell_jsons()
-        self.progress("Abrir JSON", "Carregando editores...", 80)
+        self.progress("Open JSON", "Loading editors...", 80)
         self.load_json_data()
         self.load_effects_and_missiles_catalog()
         self.load_icon_sheet()
-        self.progress("Concluido", "Cliente carregado e pronto para edicao.", 100)
+        self.progress("Completed", "Client loaded and ready for editing.", 100)
 
     def auto_backup_on_load(self, p: dict[str, Path]) -> None:
         src_rcc = p["source_rcc"]
@@ -165,7 +165,7 @@ class GraphicsCore:
             return
         bak_rcc = src_rcc.with_suffix(src_rcc.suffix + ".bak")
         shutil.copy2(src_rcc, bak_rcc)
-        self.log(f"Backup automatico RCC atualizado: {bak_rcc}")
+        self.log(f"Automatic RCC backup updated: {bak_rcc}")
 
     def decompile_rcc(self) -> None:
         p = self.client_paths()
@@ -175,7 +175,7 @@ class GraphicsCore:
         src_dir.mkdir(parents=True, exist_ok=True)
         already_registered = set(list_resource_files())
         if not QResource.registerResource(str(p["source_rcc"])):
-            raise RuntimeError(f"Falha ao abrir RCC: {p['source_rcc']}")
+            raise RuntimeError(f"Failed to open RCC: {p['source_rcc']}")
         resource_paths = sorted(set(list_resource_files()) - already_registered)
         for qpath in resource_paths:
             rel = qpath.removeprefix(":/")
@@ -184,7 +184,7 @@ class GraphicsCore:
             out_path.write_bytes(bytes(QResource(qpath).data()))
         QResource.unregisterResource(str(p["source_rcc"]))
         write_qrc(src_dir, [x.removeprefix(":/") for x in resource_paths])
-        self.log(f"Decompilado em: {src_dir}")
+        self.log(f"Decompiled to: {src_dir}")
 
     def extract_spell_jsons(self) -> None:
         p = self.client_paths()
@@ -193,44 +193,44 @@ class GraphicsCore:
         for name, (_, _, raw) in resources.items():
             out = p["spells_dir"] / name
             out.write_bytes(raw)
-            self.log(f"JSON extraido: {out}")
+            self.log(f"JSON extracted: {out}")
 
     # ---- validacao -------------------------------------------------------
     def validate_spells_schema(self, obj) -> None:
         if not isinstance(obj, list):
-            raise RuntimeError("spells.json precisa ser lista.")
+            raise RuntimeError("spells.json must be a list.")
         seen = set()
         for i, item in enumerate(obj):
             if not isinstance(item, dict):
-                raise RuntimeError(f"spells item #{i + 1} precisa ser objeto.")
+                raise RuntimeError(f"spells item #{i + 1} must be an object.")
             if "spellid" not in item or not isinstance(item["spellid"], int):
-                raise RuntimeError(f"spells item #{i + 1} precisa de spellid inteiro.")
+                raise RuntimeError(f"spells item #{i + 1} requires integer spellid.")
             if item["spellid"] in seen:
-                raise RuntimeError(f"spellid duplicado em spells.json: {item['spellid']}")
+                raise RuntimeError(f"duplicate spellid in spells.json: {item['spellid']}")
             seen.add(item["spellid"])
 
     def validate_previews_schema(self, obj) -> None:
         if not isinstance(obj, dict):
-            raise RuntimeError("spells-previews.json precisa ser objeto.")
+            raise RuntimeError("spells-previews.json must be an object.")
         for key, value in obj.items():
             if not str(key).isdigit():
-                raise RuntimeError(f"Chave invalida em previews: {key}")
+                raise RuntimeError(f"Invalid key in previews: {key}")
             if not isinstance(value, dict):
-                raise RuntimeError(f"Registro previews[{key}] precisa ser objeto.")
+                raise RuntimeError(f"Preview record[{key}] must be an object.")
             if "spellid" not in value:
-                raise RuntimeError(f"Registro previews[{key}] sem spellid.")
+                raise RuntimeError(f"Preview record[{key}] without spellid.")
             if int(value["spellid"]) != int(key):
-                raise RuntimeError(f"Registro previews[{key}] precisa ter spellid {key}.")
+                raise RuntimeError(f"Preview record[{key}] must have spellid {key}.")
 
     def validate_jsons(self) -> None:
         p = self.client_paths()
         spells_path = p["spells_dir"] / "spells.json"
         previews_path = p["spells_dir"] / "spells-previews.json"
         if not spells_path.exists() or not previews_path.exists():
-            raise RuntimeError("Nao encontrou spells.json e spells-previews.json na pasta spells.")
+            raise RuntimeError("Could not find spells.json and spells-previews.json in spells folder.")
         self.validate_spells_schema(json.loads(spells_path.read_text(encoding="utf-8")))
         self.validate_previews_schema(json.loads(previews_path.read_text(encoding="utf-8")))
-        self.log("JSONs validados com sucesso.")
+        self.log("JSONs validated successfully.")
 
     def load_json_data(self) -> None:
         p = self.client_paths()
@@ -244,7 +244,7 @@ class GraphicsCore:
         p = self.client_paths()
         out = p["spells_dir"] / "spells.json"
         out.write_text(json.dumps(self.spells_data, ensure_ascii=False, indent=4), encoding="utf-8")
-        self.log(f"Arquivo salvo: {out}")
+        self.log(f"File saved: {out}")
 
     def save_previews_file(self) -> None:
         self.validate_previews_schema(self.previews_data)
@@ -253,7 +253,7 @@ class GraphicsCore:
         ordered = dict(sorted(self.previews_data.items(), key=lambda x: int(x[0])))
         out.write_text(json.dumps(ordered, ensure_ascii=False, indent=4), encoding="utf-8")
         self.previews_data = ordered
-        self.log(f"Arquivo salvo: {out}")
+        self.log(f"File saved: {out}")
 
     # ---- catalogo FX / objetos ------------------------------------------
     def load_effects_and_missiles_catalog(self) -> None:
@@ -274,7 +274,7 @@ class GraphicsCore:
             app_dat = self._appearances_dat_path(catalog_content, assets_dir)
             proto_path = detect_proto_path()
             if app_dat is None or proto_path is None:
-                self.log("Catalogo FX/Missiles: appearances.dat ou appearances.proto nao encontrado.")
+                self.log("FX/Missiles catalog: appearances.dat or appearances.proto not found.")
                 return
             self.sprite_catalog_ranges = self._load_sprite_ranges_from_catalog(catalog_content, assets_dir)
             effects, missiles, object_msgs = self._parse_appearances_dat(proto_path, app_dat)
@@ -284,9 +284,9 @@ class GraphicsCore:
             self._missiles_by_id = {int(m["id"]): m for m in missiles}
             self._object_msgs = object_msgs
             self._warmup_object_preview_cache()
-            self.log(f"Catalogo carregado: {len(effects)} effects, {len(missiles)} missiles, {len(object_msgs)} objects.")
+            self.log(f"Catalog loaded: {len(effects)} effects, {len(missiles)} missiles, {len(object_msgs)} objects.")
         except Exception as exc:  # noqa: BLE001
-            self.log(f"[WARN] Falha ao carregar catalogo FX/Missiles: {exc}")
+            self.log(f"[WARN] Failed to load FX/Missiles catalog: {exc}")
 
     def _warmup_object_preview_cache(self) -> None:
         # Precarrega apenas os objetos que entram na lista (filtrados por JSON, quando existir).
@@ -304,7 +304,7 @@ class GraphicsCore:
             except Exception:
                 continue
             if i % 200 == 0 or i == total:
-                self.progress("Catalogo", f"Precarregando objetos ({i}/{total})...", 80 + int((i / total) * 15))
+                self.progress("Catalog", f"Preloading objects ({i}/{total})...", 80 + int((i / total) * 15))
 
     def _appearances_dat_path(self, catalog_path: Path, assets_dir: Path) -> Path | None:
         try:
@@ -329,10 +329,10 @@ class GraphicsCore:
                 )
                 pb2_path = Path(tmp_dir) / "appearances_pb2.py"
                 if not pb2_path.exists():
-                    raise RuntimeError("Nao foi possivel gerar appearances_pb2.py")
+                    raise RuntimeError("Could not generate appearances_pb2.py")
                 spec = importlib.util.spec_from_file_location("appearances_pb2_runtime", pb2_path)
                 if spec is None or spec.loader is None:
-                    raise RuntimeError("Falha ao carregar modulo protobuf gerado.")
+                    raise RuntimeError("Failed to load generated protobuf module.")
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
             self._app_module = module
@@ -626,7 +626,7 @@ class GraphicsCore:
         max_durations = [int(d) for d in cat.get("frame_durations_max", []) if int(d) > 0]
         if max_durations:
             return max(1, sum(max_durations))
-        # fallback para catálogos sem min/max por fase
+        # fallback for catalogs without per-phase min/max
         avg_durations = [int(d) for d in cat.get("frame_durations", []) if int(d) > 0]
         if avg_durations:
             return max(1, sum(avg_durations))
@@ -676,27 +676,27 @@ class GraphicsCore:
 
     def ensure_icon_index_capacity(self, target_index: int) -> None:
         if target_index < 0:
-            raise RuntimeError("Index alvo nao pode ser negativo.")
+            raise RuntimeError("Target index cannot be negative.")
         p = self.client_paths()
         for rel, size in SPELL_SHEETS:
             sheet_path = p["src_dir"] / rel
             if not sheet_path.exists():
-                raise RuntimeError(f"Spritesheet nao encontrado: {sheet_path}.")
+                raise RuntimeError(f"Spritesheet not found: {sheet_path}.")
             sheet = Image.open(sheet_path).convert("RGBA")
             expanded = self._expand_sheet_to_index(sheet, size, target_index)
             if expanded.width != sheet.width:
                 expanded.save(sheet_path)
-                self.log(f"Espaco custom criado ate index {target_index} em {sheet_path.name}.")
+                self.log(f"Custom space created up to index {target_index} in {sheet_path.name}.")
 
     def add_or_replace_icon(self, icon_file: str, selected_index: int | None) -> int:
         icon_path = Path(icon_file)
         if not icon_path.exists():
-            raise RuntimeError("Arquivo de icone nao encontrado.")
+            raise RuntimeError("Icon file not found.")
         idx = 0
         for i, (rel, size) in enumerate(SPELL_SHEETS, start=1):
             sheet_path = self.client_paths()["src_dir"] / rel
             if not sheet_path.exists():
-                raise RuntimeError(f"Spritesheet nao encontrado: {sheet_path}. Rode carregar cliente primeiro.")
+                raise RuntimeError(f"Spritesheet not found: {sheet_path}. Run Load Client first.")
             sheet = Image.open(sheet_path).convert("RGBA")
             count = sheet.width // size
             idx = count if selected_index is None else selected_index
@@ -709,27 +709,27 @@ class GraphicsCore:
                 icon = icon.resize((size, size), Image.Resampling.LANCZOS)
             sheet.alpha_composite(icon, (idx * size, 0))
             sheet.save(sheet_path)
-            self.log(f"Spritesheet atualizado: {sheet_path.name}")
-            self.progress("Icone", f"Atualizado {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
+            self.log(f"Spritesheet updated: {sheet_path.name}")
+            self.progress("Icon", f"Updated {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
-        self.progress("Concluido", "Icones atualizados com sucesso.", 100)
+        self.progress("Completed", "Icons atualizados com sucesso.", 100)
         return idx
 
     def remove_icon(self, idx: int) -> None:
         for i, (rel, size) in enumerate(SPELL_SHEETS, start=1):
             sheet_path = self.client_paths()["src_dir"] / rel
             if not sheet_path.exists():
-                raise RuntimeError(f"Spritesheet nao encontrado: {sheet_path}.")
+                raise RuntimeError(f"Spritesheet not found: {sheet_path}.")
             sheet = Image.open(sheet_path).convert("RGBA")
             max_index = (sheet.width // size) - 1
             if idx > max_index:
-                raise RuntimeError(f"Index {idx} fora da faixa para {sheet_path.name} (max {max_index}).")
+                raise RuntimeError(f"Index {idx} out of range for {sheet_path.name} (max {max_index}).")
             sheet.paste((0, 0, 0, 0), (idx * size, 0, (idx + 1) * size, size))
             sheet.save(sheet_path)
-            self.log(f"Icone removido no index {idx}: {sheet_path.name}")
-            self.progress("Icone", f"Removido em {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
+            self.log(f"Icon removed at index {idx}: {sheet_path.name}")
+            self.progress("Icon", f"Removed in {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
-        self.progress("Concluido", "Icone removido com sucesso.", 100)
+        self.progress("Completed", "Icon removido com sucesso.", 100)
 
     def move_icon_index(self, source_idx: int, target_idx: int) -> None:
         self.ensure_icon_index_capacity(max(source_idx, target_idx))
@@ -743,10 +743,10 @@ class GraphicsCore:
             sheet.paste(source_icon, target_box)
             sheet.paste(target_icon, source_box)
             sheet.save(sheet_path)
-            self.progress("Icone", f"Reordenado em {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
+            self.progress("Icon", f"Reordered in {sheet_path.name}", 10 + (i / len(SPELL_SHEETS)) * 85)
         self.load_icon_sheet()
-        self.log(f"Icones trocados entre indices {source_idx} e {target_idx}.")
-        self.progress("Concluido", "Reordenacao de icones concluida.", 100)
+        self.log(f"Icons swapped between indexes {source_idx} and {target_idx}.")
+        self.progress("Completed", "Icon reordering completed.", 100)
 
     # ---- build / install (portado fielmente do Tkinter; destrutivo) ------
     def compile_rcc(self) -> None:
@@ -754,23 +754,23 @@ class GraphicsCore:
         qrc_path = p["src_dir"] / "graphics_resources.qrc"
         if not qrc_path.exists():
             write_qrc(p["src_dir"], collect_source_resource_paths(p["src_dir"]))
-        self.progress("Compilar", "Executando rcc.exe...", 45)
+        self.progress("Compile", "Running rcc.exe...", 45)
         subprocess.run(
             [str(qt_rcc_exe()), "-binary", str(qrc_path), "-o", str(p["output_rcc"])],
             cwd=p["src_dir"],
             check=True,
         )
         self.validate_rcc(p["output_rcc"])
-        self.log(f"RCC compilado: {p['output_rcc']}")
+        self.log(f"RCC compiled: {p['output_rcc']}")
 
     def validate_rcc(self, rcc_path: Path) -> None:
         if not QResource.registerResource(str(rcc_path)):
-            raise RuntimeError(f"RCC invalido: {rcc_path}")
+            raise RuntimeError(f"Invalid RCC: {rcc_path}")
         try:
             for rel, _ in SPELL_SHEETS:
                 image = QImage(f":/{rel}")
                 if image.isNull():
-                    raise RuntimeError(f"Recurso ausente no RCC: :/{rel}")
+                    raise RuntimeError(f"Missing resource in RCC: :/{rel}")
                 self.log(f"OK :/{rel} -> {image.width()}x{image.height()}")
         finally:
             QResource.unregisterResource(str(rcc_path))
@@ -784,8 +784,8 @@ class GraphicsCore:
             if item.exists():
                 dst = backup_dir / f"{item.stem}.manual_{stamp}{item.suffix}"
                 shutil.copy2(item, dst)
-                self.log(f"Backup manual: {dst}")
-        self.progress("Backup manual", "Concluido.", 100)
+                self.log(f"Manual backup: {dst}")
+        self.progress("Manual backup", "Completed.", 100)
 
     def embed_spell_jsons(self) -> None:
         import zlib
@@ -797,25 +797,25 @@ class GraphicsCore:
         for name in ("spells.json", "spells-previews.json"):
             src = p["spells_dir"] / name
             if not src.exists():
-                raise RuntimeError(f"JSON nao encontrado para embed: {src}")
+                raise RuntimeError(f"JSON not found for embed: {src}")
             offset, compressed_size, raw_original = slots[name]
             max_uncompressed = len(raw_original)
             raw = minified_json_bytes(src)
             if len(raw) > max_uncompressed:
-                raise RuntimeError(f"{name} excede tamanho maximo ({len(raw)} > {max_uncompressed}).")
+                raise RuntimeError(f"{name} exceeds max size ({len(raw)} > {max_uncompressed}).")
             raw = raw + (b" " * (max_uncompressed - len(raw)))
             compressed = zlib.compress(raw, level=9)
             if len(compressed) > compressed_size:
-                raise RuntimeError(f"{name} comprimido excede limite ({len(compressed)} > {compressed_size}).")
+                raise RuntimeError(f"{name} compressed exceeds limit ({len(compressed)} > {compressed_size}).")
             replacement = compressed + (b"\x00" * (compressed_size - len(compressed)))
             patched[offset: offset + compressed_size] = replacement
-            self.log(f"{name} embedado: {len(compressed)}/{compressed_size}")
+            self.log(f"{name} embedded: {len(compressed)}/{compressed_size}")
         backup = p["client_exe"].with_name("client.original.exe")
         if not backup.exists():
             shutil.copy2(p["client_exe"], backup)
-            self.log(f"Backup criado: {backup}")
+            self.log(f"Backup created: {backup}")
         p["client_exe"].write_bytes(patched)
-        self.log("client.exe atualizado com JSONs embedados.")
+        self.log("client.exe updated with embedded JSONs.")
 
     def patch_client_for_embedded_spells(self) -> None:
         p = self.client_paths()
@@ -823,7 +823,7 @@ class GraphicsCore:
         target = CLIENT_SPELL_PATHS["embedded"]
         path_counts = {name: [data.count(x) for x in values] for name, values in CLIENT_SPELL_PATHS.items()}
         if path_counts["embedded"] == [1, 1]:
-            self.log("client.exe ja aponta para JSONs embedados.")
+            self.log("client.exe already points to embedded JSONs.")
             return
         source_name = None
         for name, counts in path_counts.items():
@@ -831,34 +831,38 @@ class GraphicsCore:
                 source_name = name
                 break
         if source_name is None:
-            raise RuntimeError(f"Nao achei caminho patchavel no client.exe: {path_counts}")
+            raise RuntimeError(f"Could not find patchable path in client.exe: {path_counts}")
         patched = data
         for old, new in zip(CLIENT_SPELL_PATHS[source_name], target):
             if len(old) != len(new):
-                raise RuntimeError("Incompatibilidade no tamanho de strings de patch.")
+                raise RuntimeError("Patch string size mismatch.")
             patched = patched.replace(old, new, 1)
         p["client_exe"].write_bytes(patched)
-        self.log("Patch de caminhos do client.exe concluido.")
+        self.log("client.exe path patch completed.")
 
     def install_all(self) -> None:
         p = self.client_paths()
         backup_rcc = p["source_rcc"].with_name("graphics_resources.original.rcc")
         if not backup_rcc.exists():
             shutil.copy2(p["source_rcc"], backup_rcc)
-            self.log(f"Backup criado: {backup_rcc}")
+            self.log(f"Backup created: {backup_rcc}")
         shutil.copy2(p["output_rcc"], p["source_rcc"])
-        self.log("RCC custom instalado no cliente.")
+        self.log("Custom RCC installed in client.")
         self.embed_spell_jsons()
         self.patch_client_for_embedded_spells()
-        self.log("Instalacao completa finalizada.")
+        self.log("Full installation completed.")
 
     def compile_and_install(self) -> None:
-        self.progress("Validacao", "Validando e salvando JSONs...", 10)
+        self.progress("Validation", "Validating and saving JSONs...", 10)
         self.save_spells_file()
         self.save_previews_file()
         self.validate_jsons()
-        self.progress("Compilacao", "Compilando RCC...", 40)
+        self.progress("Compilation", "Compiling RCC...", 40)
         self.compile_rcc()
-        self.progress("Instalacao", "Instalando no cliente...", 80)
+        self.progress("Installation", "Installing into client...", 80)
         self.install_all()
-        self.progress("Concluido", "Compilacao + instalacao concluida.", 100)
+        self.progress("Completed", "Compilation + installation completed.", 100)
+
+
+
+

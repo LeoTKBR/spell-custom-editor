@@ -1,4 +1,4 @@
-"""Janela principal: monta a UI e orquestra GraphicsCore via Worker."""
+﻿"""Main window: builds the UI and orchestrates GraphicsCore via Worker."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         self._workers: list[Worker] = []
 
-        # Estado de UI
+        # UI state
         self.spells_filtered_indices: list[int] = []
         self.previews_filtered_keys: list[str] = []
         self.selected_spell_id: int | None = None
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self._preview_undo_stack: list[tuple[str, dict]] = []
         self._preview_redo_stack: list[tuple[str, dict]] = []
         self._grid_gesture_snapshot_taken = False
-        self._grid_tool_mode = "Adicionar"
+        self._grid_tool_mode = "Add"
         self._asset_picker_entries: list[dict] = []
         self._asset_icon_last_tick = -1
 
@@ -92,7 +92,7 @@ class MainWindow(QMainWindow):
         self._anim_timer.start(33)
 
     # ===================================================================
-    # Construcao da UI
+    # UI construction
     # ===================================================================
     def _build_ui(self) -> None:
         central = QWidget()
@@ -101,26 +101,26 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
 
-        client_box = QGroupBox("1) Cliente")
+        client_box = QGroupBox("1) Client")
         cb = QVBoxLayout(client_box)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Pasta do cliente:"))
+        row.addWidget(QLabel("Client folder:"))
         self.client_dir_edit = QLineEdit()
         row.addWidget(self.client_dir_edit, 1)
-        btn_sel = QPushButton("Selecionar")
+        btn_sel = QPushButton("Select")
         btn_sel.clicked.connect(self.select_client_dir)
         row.addWidget(btn_sel)
-        self.btn_load = QPushButton("Carregar Cliente")
+        self.btn_load = QPushButton("Load Client")
         self.btn_load.clicked.connect(self.on_load_client)
         row.addWidget(self.btn_load)
         cb.addLayout(row)
         prow = QHBoxLayout()
-        self.step_label = QLabel("Etapa: -")
+        self.step_label = QLabel("Step: -")
         prow.addWidget(self.step_label)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         prow.addWidget(self.progress_bar, 1)
-        self.status_label = QLabel("Aguardando selecao da pasta do cliente.")
+        self.status_label = QLabel("Waiting for client folder selection.")
         self.status_label.setWordWrap(True)
         prow.addWidget(self.status_label)
         cb.addLayout(prow)
@@ -148,15 +148,15 @@ class MainWindow(QMainWindow):
     def _build_menu_and_toolbar(self) -> None:
         menubar = self.menuBar()
         build_menu = menubar.addMenu("Build")
-        self.act_compile = QAction("Compilar e Instalar", self)
+        self.act_compile = QAction("Compile and Install", self)
         self.act_compile.triggered.connect(self.on_compile_install)
         build_menu.addAction(self.act_compile)
-        self.act_backup = QAction("Backup Manual", self)
+        self.act_backup = QAction("Manual Backup", self)
         self.act_backup.triggered.connect(self.on_manual_backup)
         build_menu.addAction(self.act_backup)
 
-        options_menu = menubar.addMenu("Opções")
-        self.act_toggle_log = QAction("Mostrar Log", self, checkable=True, checked=False)
+        options_menu = menubar.addMenu("Options")
+        self.act_toggle_log = QAction("Show Log", self, checkable=True, checked=False)
         self.act_toggle_log.toggled.connect(self._on_toggle_log)
         options_menu.addAction(self.act_toggle_log)
 
@@ -168,8 +168,8 @@ class MainWindow(QMainWindow):
         act_discord_tk.triggered.connect(lambda: self._open_url("https://discord.gg/rj97H4JD3k"))
         discord_menu.addAction(act_discord_tk)
 
-        credits_menu = menubar.addMenu("Créditos")
-        act_show_credits = QAction("Ver Créditos", self)
+        credits_menu = menubar.addMenu("Credits")
+        act_show_credits = QAction("View Credits", self)
         act_show_credits.triggered.connect(self._show_credits)
         credits_menu.addAction(act_show_credits)
 
@@ -189,13 +189,13 @@ class MainWindow(QMainWindow):
 
     def _open_url(self, url: str) -> None:
         if not QDesktopServices.openUrl(QUrl(url)):
-            QMessageBox.warning(self, "Atencao", f"Nao foi possivel abrir o link:\n{url}")
+            QMessageBox.warning(self, "Attention", f"Could not open link:\n{url}")
 
     def _show_credits(self) -> None:
         QMessageBox.information(
             self,
-            "Créditos",
-            "Créditos:\n\n"
+            "Credits",
+            "Credits:\n\n"
             "LeoTK\n"
             "Beats\n"
             "RedSTwix\n"
@@ -210,37 +210,37 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         lay = QVBoxLayout(tab)
 
-        importbox = QGroupBox("Importar / Substituir")
+        importbox = QGroupBox("Import / Replace")
         ib = QHBoxLayout(importbox)
         ib.addWidget(QLabel("PNG:"))
         self.icon_path_edit = QLineEdit()
         ib.addWidget(self.icon_path_edit, 1)
-        btn_pick = QPushButton("Selecionar PNG")
+        btn_pick = QPushButton("Select PNG")
         btn_pick.clicked.connect(self.select_icon_png)
         ib.addWidget(btn_pick)
         ib.addWidget(QLabel("Index (opcional):"))
         self.icon_index_edit = QLineEdit()
         self.icon_index_edit.setFixedWidth(70)
         ib.addWidget(self.icon_index_edit)
-        self.btn_add_icon = QPushButton("Adicionar/Substituir")
+        self.btn_add_icon = QPushButton("Add/Replace")
         self.btn_add_icon.clicked.connect(self.on_add_icon)
         ib.addWidget(self.btn_add_icon)
-        self.btn_remove_icon = QPushButton("Remover")
+        self.btn_remove_icon = QPushButton("Remove")
         self.btn_remove_icon.clicked.connect(self.on_remove_icon)
         ib.addWidget(self.btn_remove_icon)
         lay.addWidget(importbox)
 
         toprow = QHBoxLayout()
-        self.icon_selected_label = QLabel("Indice selecionado: -")
+        self.icon_selected_label = QLabel("Selected index: -")
         toprow.addWidget(self.icon_selected_label)
         toprow.addStretch(1)
-        self.btn_icon_create = QPushButton("Criar indice custom")
+        self.btn_icon_create = QPushButton("Create custom index")
         self.btn_icon_create.clicked.connect(self.on_create_custom_icon)
         toprow.addWidget(self.btn_icon_create)
-        self.btn_icon_import_sel = QPushButton("Importar PNG no indice")
+        self.btn_icon_import_sel = QPushButton("Import PNG to index")
         self.btn_icon_import_sel.clicked.connect(self.on_import_icon_selected)
         toprow.addWidget(self.btn_icon_import_sel)
-        self.btn_icon_clear = QPushButton("Limpar indice")
+        self.btn_icon_clear = QPushButton("Clear index")
         self.btn_icon_clear.clicked.connect(self.on_clear_icon_selected)
         toprow.addWidget(self.btn_icon_clear)
         lay.addLayout(toprow)
@@ -276,7 +276,7 @@ class MainWindow(QMainWindow):
 
         left = QWidget()
         ll = QVBoxLayout(left)
-        ll.addWidget(QLabel("Buscar por id/nome/formula"))
+        ll.addWidget(QLabel("Search by id/name/formula"))
         self.spells_search = QLineEdit()
         self.spells_search.textChanged.connect(self.refresh_spells_list)
         ll.addWidget(self.spells_search)
@@ -284,11 +284,11 @@ class MainWindow(QMainWindow):
         self.spells_list.currentRowChanged.connect(self.on_select_spell)
         ll.addWidget(self.spells_list, 1)
         brow = QHBoxLayout()
-        self.btn_spell_new = QPushButton("Novo")
+        self.btn_spell_new = QPushButton("New")
         self.btn_spell_new.clicked.connect(self.new_spell)
-        self.btn_spell_dup = QPushButton("Duplicar")
+        self.btn_spell_dup = QPushButton("Duplicate")
         self.btn_spell_dup.clicked.connect(self.duplicate_spell)
-        self.btn_spell_del = QPushButton("Deletar")
+        self.btn_spell_del = QPushButton("Delete")
         self.btn_spell_del.clicked.connect(self.delete_spell)
         for b in (self.btn_spell_new, self.btn_spell_dup, self.btn_spell_del):
             brow.addWidget(b)
@@ -336,7 +336,7 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.spell_description)
         text_split.addWidget(description_box)
 
-        extra_box = QGroupBox("Campos extras (JSON opcional)")
+        extra_box = QGroupBox("Extra fields (optional JSON)")
         el = QVBoxLayout(extra_box)
         self.spell_extra = QTextEdit()
         self.spell_extra.setMinimumHeight(220)
@@ -348,9 +348,9 @@ class MainWindow(QMainWindow):
         text_split.setSizes([520, 520])
         rl.addWidget(text_split, 1)
         srow = QHBoxLayout()
-        self.btn_spell_save = QPushButton("Salvar Registro")
+        self.btn_spell_save = QPushButton("Save Record")
         self.btn_spell_save.clicked.connect(self.save_spell_record)
-        self.btn_spells_save_all = QPushButton("Salvar Arquivo")
+        self.btn_spells_save_all = QPushButton("Save File")
         self.btn_spells_save_all.clicked.connect(self.on_save_spells_file)
         srow.addWidget(self.btn_spell_save)
         srow.addWidget(self.btn_spells_save_all)
@@ -376,7 +376,7 @@ class MainWindow(QMainWindow):
 
         left = QWidget()
         ll = QVBoxLayout(left)
-        ll.addWidget(QLabel("Buscar por id/nome"))
+        ll.addWidget(QLabel("Search by id/name"))
         self.previews_search = QLineEdit()
         self.previews_search.textChanged.connect(self.refresh_previews_list)
         ll.addWidget(self.previews_search)
@@ -384,11 +384,11 @@ class MainWindow(QMainWindow):
         self.previews_list.currentRowChanged.connect(self.on_select_preview)
         ll.addWidget(self.previews_list, 1)
         brow = QHBoxLayout()
-        self.btn_preview_new = QPushButton("Novo")
+        self.btn_preview_new = QPushButton("New")
         self.btn_preview_new.clicked.connect(self.new_preview)
-        self.btn_preview_dup = QPushButton("Duplicar")
+        self.btn_preview_dup = QPushButton("Duplicate")
         self.btn_preview_dup.clicked.connect(self.duplicate_preview)
-        self.btn_preview_del = QPushButton("Deletar")
+        self.btn_preview_del = QPushButton("Delete")
         self.btn_preview_del.clicked.connect(self.delete_preview)
         for b in (self.btn_preview_new, self.btn_preview_dup, self.btn_preview_del):
             brow.addWidget(b)
@@ -397,7 +397,7 @@ class MainWindow(QMainWindow):
         split.addWidget(left)
 
         right = QTabWidget()
-        right.addTab(self._wrap_scroll_widget(self._build_preview_structural()), "Estrutural")
+        right.addTab(self._wrap_scroll_widget(self._build_preview_structural()), "Structural")
         right.addTab(self._wrap_scroll_widget(self._build_preview_grid_tab()), "Grid FX/Missiles")
         split.addWidget(right)
         split.setStretchFactor(0, 1)
@@ -436,9 +436,9 @@ class MainWindow(QMainWindow):
         self.timestamps_list.setMinimumHeight(120)
         tsl.addWidget(self.timestamps_list)
         tsb = QHBoxLayout()
-        b1 = QPushButton("Adicionar")
+        b1 = QPushButton("Add")
         b1.clicked.connect(self.add_timestamp)
-        b2 = QPushButton("Remover")
+        b2 = QPushButton("Remove")
         b2.clicked.connect(self.remove_timestamp)
         tsb.addWidget(b1)
         tsb.addWidget(b2)
@@ -471,7 +471,7 @@ class MainWindow(QMainWindow):
         af.addStretch(1)
         al.addLayout(af)
         ab = QHBoxLayout()
-        for label, slot in (("Adicionar", self.add_action), ("Atualizar", self.update_action), ("Remover", self.remove_action)):
+        for label, slot in (("Add", self.add_action), ("Update", self.update_action), ("Remove", self.remove_action)):
             btn = QPushButton(label)
             btn.clicked.connect(slot)
             ab.addWidget(btn)
@@ -501,7 +501,7 @@ class MainWindow(QMainWindow):
         iform.addStretch(1)
         il.addLayout(iform)
         ib = QHBoxLayout()
-        for label, slot in (("Adicionar", self.add_init_action), ("Atualizar", self.update_init_action), ("Remover", self.remove_init_action)):
+        for label, slot in (("Add", self.add_init_action), ("Update", self.update_init_action), ("Remove", self.remove_init_action)):
             btn = QPushButton(label)
             btn.clicked.connect(slot)
             ib.addWidget(btn)
@@ -514,9 +514,9 @@ class MainWindow(QMainWindow):
         lay.addWidget(editors, 1)
 
         srow = QHBoxLayout()
-        self.btn_preview_save = QPushButton("Salvar Registro")
+        self.btn_preview_save = QPushButton("Save Record")
         self.btn_preview_save.clicked.connect(self.save_preview_record)
-        self.btn_previews_save_all = QPushButton("Salvar Arquivo")
+        self.btn_previews_save_all = QPushButton("Save File")
         self.btn_previews_save_all.clicked.connect(self.on_save_previews_file)
         srow.addWidget(self.btn_preview_save)
         srow.addWidget(self.btn_previews_save_all)
@@ -532,13 +532,13 @@ class MainWindow(QMainWindow):
         gl = QVBoxLayout(grid_box)
         row = QHBoxLayout()
         left_panel = QVBoxLayout()
-        left_panel.addWidget(QLabel("Tipo de lista"))
+        left_panel.addWidget(QLabel("List type"))
         self.asset_kind_combo = QComboBox()
         self.asset_kind_combo.addItems(["Effect", "Missile", "Object"])
         self.asset_kind_combo.currentIndexChanged.connect(self._refresh_asset_picker_list)
         left_panel.addWidget(self.asset_kind_combo)
         self.asset_search = QLineEdit()
-        self.asset_search.setPlaceholderText("Buscar por id/nome...")
+        self.asset_search.setPlaceholderText("Search by id/name...")
         self.asset_search.textChanged.connect(self._refresh_asset_picker_list)
         left_panel.addWidget(self.asset_search)
         self.asset_list = QListWidget()
@@ -546,10 +546,10 @@ class MainWindow(QMainWindow):
         self.asset_list.setMinimumWidth(280)
         self.asset_list.setMaximumWidth(360)
         left_panel.addWidget(self.asset_list, 1)
-        self.btn_update_field_json = QPushButton("Atualizar JSON Fields")
+        self.btn_update_field_json = QPushButton("Refresh Fields JSON")
         self.btn_update_field_json.clicked.connect(self.on_update_field_objects_json)
         left_panel.addWidget(self.btn_update_field_json)
-        left_info = QLabel("Clique esquerdo: adiciona no grid\nCtrl + clique esquerdo: remove")
+        left_info = QLabel("Left click: add to grid\nCtrl + left click: remove")
         left_info.setWordWrap(True)
         left_panel.addWidget(left_info)
         left_w = QWidget()
@@ -558,32 +558,32 @@ class MainWindow(QMainWindow):
 
         right_panel = QVBoxLayout()
         tools = QHBoxLayout()
-        self.btn_mode_target = self._make_grid_tool_button("Definir Target", "SP_CommandLink", "Definir Target")
+        self.btn_mode_target = self._make_grid_tool_button("Set Target", "SP_CommandLink", "Set Target")
         self.btn_mode_target.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         tools.addWidget(self.btn_mode_target)
-        self.btn_mode_add = self._make_grid_tool_button("Adicionar", "SP_DialogYesButton", "Adicionar")
+        self.btn_mode_add = self._make_grid_tool_button("Add", "SP_DialogYesButton", "Add")
         self.btn_mode_add.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         tools.addWidget(self.btn_mode_add)
         self.btn_grid_undo = QToolButton()
-        self.btn_grid_undo.setText("Desfazer")
+        self.btn_grid_undo.setText("Undo")
         self.btn_grid_undo.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowBack))
         self.btn_grid_undo.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self.btn_grid_undo.clicked.connect(self._undo_preview_edit)
         tools.addWidget(self.btn_grid_undo)
         self.btn_grid_redo = QToolButton()
-        self.btn_grid_redo.setText("Refazer")
+        self.btn_grid_redo.setText("Redo")
         self.btn_grid_redo.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ArrowForward))
         self.btn_grid_redo.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self.btn_grid_redo.clicked.connect(self._redo_preview_edit)
         tools.addWidget(self.btn_grid_redo)
         tools.addSpacing(14)
-        self.render_objecttype = QCheckBox("Renderizar objecttype")
+        self.render_objecttype = QCheckBox("Render objecttype")
         self.render_objecttype.setChecked(True)
         self.render_objecttype.stateChanged.connect(lambda *_: self.update_preview_grid(force=True))
         tools.addWidget(self.render_objecttype)
         tools.addStretch(1)
         right_panel.addLayout(tools)
-        self.grid_mode_label = QLabel("Modo atual: Adicionar | Clique: adiciona | Ctrl+Clique: remove")
+        self.grid_mode_label = QLabel("Current mode: Add | Click: add | Ctrl+Click: remove")
         right_panel.addWidget(self.grid_mode_label)
         self.preview_grid = PreviewGrid()
         self.preview_grid.cellClicked.connect(self.on_grid_click)
@@ -595,7 +595,7 @@ class MainWindow(QMainWindow):
         row.addWidget(right_w, 1)
         gl.addLayout(row, 1)
         lay.addWidget(grid_box, 1)
-        self._set_grid_mode("Adicionar")
+        self._set_grid_mode("Add")
         return tab
 
     def _standard_icon_by_name(self, icon_name: str):
@@ -615,14 +615,14 @@ class MainWindow(QMainWindow):
     def _set_grid_mode(self, mode: str) -> None:
         self._grid_tool_mode = mode
         mapping = {
-            "Adicionar": getattr(self, "btn_mode_add", None),
-            "Definir Target": getattr(self, "btn_mode_target", None),
+            "Add": getattr(self, "btn_mode_add", None),
+            "Set Target": getattr(self, "btn_mode_target", None),
         }
         for k, b in mapping.items():
             if b is not None:
                 b.setChecked(k == mode)
         if hasattr(self, "grid_mode_label"):
-            self.grid_mode_label.setText(f"Modo atual: {mode} | Clique: adiciona | Ctrl+Clique: remove")
+            self.grid_mode_label.setText(f"Current mode: {mode} | Click: add | Ctrl+Click: remove")
 
     # ===================================================================
     # Infra: log/progress/worker/estado
@@ -631,7 +631,7 @@ class MainWindow(QMainWindow):
         self.log_view.appendPlainText(msg)
 
     def _update_progress(self, step: str, detail: str, value: float) -> None:
-        self.step_label.setText(f"Etapa: {step}")
+        self.step_label.setText(f"Step: {step}")
         self.status_label.setText(detail)
         self.progress_bar.setValue(int(value))
 
@@ -652,7 +652,7 @@ class MainWindow(QMainWindow):
             cleanup()
             self._set_loaded_actions_state(bool(self.core.spells_data) or self.core.icon_sheet_32 is not None)
             self.btn_load.setEnabled(True)
-            QMessageBox.critical(self, "Erro", msg)
+            QMessageBox.critical(self, "Error", msg)
             self.status_label.setText(f"Falhou: {msg}")
 
         worker.ok.connect(done)
@@ -672,19 +672,19 @@ class MainWindow(QMainWindow):
             w.setEnabled(enabled)
 
     # ===================================================================
-    # Cliente
+    # Client
     # ===================================================================
     def select_client_dir(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Selecione a pasta do cliente")
+        folder = QFileDialog.getExistingDirectory(self, "Select client folder")
         if folder:
             self.client_dir_edit.setText(folder)
             self._save_ui_settings()
-            self._append_log(f"Pasta selecionada: {folder}")
+            self._append_log(f"Selected folder: {folder}")
 
     def on_load_client(self) -> None:
         folder = self.client_dir_edit.text().strip()
         if not folder:
-            QMessageBox.warning(self, "Atencao", "Selecione a pasta do cliente antes de carregar.")
+            QMessageBox.warning(self, "Attention", "Select the client folder before loading.")
             return
         self.core.client_dir = folder
         self._set_loaded_actions_state(False)
@@ -705,20 +705,20 @@ class MainWindow(QMainWindow):
     # Icones
     # ===================================================================
     def select_icon_png(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Selecione o PNG", "", "PNG (*.png)")
+        path, _ = QFileDialog.getOpenFileName(self, "Select PNG", "", "PNG (*.png)")
         if path:
             self.icon_path_edit.setText(path)
-            self._append_log(f"Icone selecionado: {path}")
+            self._append_log(f"Selected icon: {path}")
 
     def _icon_index_or_none(self) -> int | None:
         raw = self.icon_index_edit.text().strip()
         if not raw:
             return None
         if not raw.lstrip("-").isdigit():
-            raise RuntimeError("icon index precisa ser numero inteiro.")
+            raise RuntimeError("icon index must be an integer.")
         idx = int(raw)
         if idx < 0:
-            raise RuntimeError("icon index nao pode ser negativo.")
+            raise RuntimeError("icon index cannot be negative.")
         return idx
 
     def refresh_icon_tab(self) -> None:
@@ -729,7 +729,7 @@ class MainWindow(QMainWindow):
     def on_icon_selected(self, idx: int) -> None:
         self.selected_icon_index = idx
         self.icon_index_edit.setText(str(idx))
-        self.icon_selected_label.setText(f"Indice selecionado: {idx}")
+        self.icon_selected_label.setText(f"Selected index: {idx}")
         self._update_icon_previews()
 
     def _update_icon_previews(self) -> None:
@@ -741,12 +741,12 @@ class MainWindow(QMainWindow):
     def on_add_icon(self) -> None:
         icon_file = self.icon_path_edit.text().strip()
         if not icon_file:
-            QMessageBox.warning(self, "Atencao", "Selecione um arquivo PNG.")
+            QMessageBox.warning(self, "Attention", "Select a PNG file.")
             return
         try:
             index = self._icon_index_or_none()
         except RuntimeError as exc:
-            QMessageBox.critical(self, "Erro", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
             return
 
         def work():
@@ -754,7 +754,7 @@ class MainWindow(QMainWindow):
 
         def done():
             self.refresh_icon_tab()
-            self._append_log(f"Icone aplicado no index {getattr(self, '_last_icon_idx', '?')}.")
+            self._append_log(f"Icon applied at index {getattr(self, '_last_icon_idx', '?')}.")
 
         self.run_bg(work, done)
 
@@ -762,15 +762,15 @@ class MainWindow(QMainWindow):
         try:
             idx = self._icon_index_or_none()
         except RuntimeError as exc:
-            QMessageBox.critical(self, "Erro", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
             return
         if idx is None:
-            QMessageBox.warning(self, "Atencao", "Informe icon index para remover.")
+            QMessageBox.warning(self, "Attention", "Enter icon index to remove.")
             return
         self.run_bg(lambda: self.core.remove_icon(idx), self.refresh_icon_tab)
 
     def on_create_custom_icon(self) -> None:
-        target, ok = QInputDialog.getInt(self, "Novo indice custom", "Informe o indice a criar:", 0, 0)
+        target, ok = QInputDialog.getInt(self, "New custom index", "Enter the index to create:", 0, 0)
         if not ok:
             return
 
@@ -783,9 +783,9 @@ class MainWindow(QMainWindow):
 
     def on_import_icon_selected(self) -> None:
         if self.selected_icon_index < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione um indice no gerenciador visual.")
+            QMessageBox.warning(self, "Attention", "Select an index in the visual manager.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Selecione o PNG", "", "PNG (*.png)")
+        path, _ = QFileDialog.getOpenFileName(self, "Select PNG", "", "PNG (*.png)")
         if not path:
             return
         idx = self.selected_icon_index
@@ -793,7 +793,7 @@ class MainWindow(QMainWindow):
 
     def on_clear_icon_selected(self) -> None:
         if self.selected_icon_index < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione um indice no gerenciador visual.")
+            QMessageBox.warning(self, "Attention", "Select an index in the visual manager.")
             return
         idx = self.selected_icon_index
         self.run_bg(lambda: self.core.remove_icon(idx), self.refresh_icon_tab)
@@ -847,39 +847,39 @@ class MainWindow(QMainWindow):
         self.spell_extra.setPlainText(json.dumps(extras, ensure_ascii=False, indent=4))
 
     def new_spell(self) -> None:
-        sid, ok = QInputDialog.getInt(self, "Novo spell", "spellid:", 1, 1)
+        sid, ok = QInputDialog.getInt(self, "New spell", "spellid:", 1, 1)
         if not ok:
             return
         if any(int(x.get("spellid", -1)) == sid for x in self.core.spells_data):
-            QMessageBox.critical(self, "Erro", f"spellid {sid} ja existe em spells.")
+            QMessageBox.critical(self, "Error", f"spellid {sid} already exists in spells.")
             return
         self.core.spells_data.append({"spellid": sid, "name": f"New Spell {sid}", "allowedVocations": []})
         self.refresh_spells_list()
-        self._append_log(f"Novo registro spell criado: {sid}")
+        self._append_log(f"New spell record created: {sid}")
 
     def duplicate_spell(self) -> None:
         if self.selected_spell_id is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de spell para duplicar.")
+            QMessageBox.warning(self, "Attention", "Select a spell record to duplicate.")
             return
         source = next((x for x in self.core.spells_data if int(x.get("spellid", -1)) == self.selected_spell_id), None)
         if source is None:
             return
-        sid, ok = QInputDialog.getInt(self, "Duplicar spell", "Novo spellid:", 1, 1)
+        sid, ok = QInputDialog.getInt(self, "Duplicate spell", "New spellid:", 1, 1)
         if not ok:
             return
         if any(int(x.get("spellid", -1)) == sid for x in self.core.spells_data):
-            QMessageBox.critical(self, "Erro", f"spellid {sid} ja existe em spells.")
+            QMessageBox.critical(self, "Error", f"spellid {sid} already exists in spells.")
             return
         clone = copy.deepcopy(source)
         clone["spellid"] = sid
         clone["name"] = f"{safe_text_value(clone.get('name', 'Spell'))} (Copy)"
         self.core.spells_data.append(clone)
         self.refresh_spells_list()
-        self._append_log(f"Registro spell duplicado para {sid}")
+        self._append_log(f"Spell record duplicated to {sid}")
 
     def delete_spell(self) -> None:
         if self.selected_spell_id is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de spell para deletar.")
+            QMessageBox.warning(self, "Attention", "Select a spell record to delete.")
             return
         sid = self.selected_spell_id
         self.core.spells_data = [x for x in self.core.spells_data if int(x.get("spellid", -1)) != sid]
@@ -887,11 +887,11 @@ class MainWindow(QMainWindow):
         self.spell_description.clear()
         self.spell_extra.clear()
         self.refresh_spells_list()
-        self._append_log(f"Registro spell removido: {sid}")
+        self._append_log(f"Spell record removed: {sid}")
 
     def save_spell_record(self) -> None:
         if self.selected_spell_id is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de spell para salvar.")
+            QMessageBox.warning(self, "Attention", "Select a spell record to save.")
             return
         try:
             sid = int(self.spell_fields["spellid"].text().strip())
@@ -899,18 +899,18 @@ class MainWindow(QMainWindow):
             level = int(self.spell_fields["minimumCasterLevel"].text().strip() or 0)
             price = int(self.spell_fields["goldPrice"].text().strip() or 0)
         except ValueError:
-            QMessageBox.critical(self, "Erro", "Campos numericos de spell invalidos.")
+            QMessageBox.critical(self, "Error", "Invalid numeric spell fields.")
             return
         if sid <= 0:
-            QMessageBox.critical(self, "Erro", "spellid precisa ser maior que zero.")
+            QMessageBox.critical(self, "Error", "spellid must be greater than zero.")
             return
         try:
             extras = json.loads(self.spell_extra.toPlainText().strip() or "{}")
         except json.JSONDecodeError as exc:
-            QMessageBox.critical(self, "Erro", f"JSON invalido em campos extras: {exc.msg}")
+            QMessageBox.critical(self, "Error", f"Invalid JSON in extra fields: {exc.msg}")
             return
         if not isinstance(extras, dict):
-            QMessageBox.critical(self, "Erro", "Campos extras precisam ser um objeto JSON.")
+            QMessageBox.critical(self, "Error", "Extra fields must be a JSON object.")
             return
         vocations = [x.strip() for x in self.spell_fields["allowedVocations"].text().split(",") if x.strip()]
         parsed = dict(extras)
@@ -933,13 +933,13 @@ class MainWindow(QMainWindow):
                 break
         self.selected_spell_id = sid
         self.refresh_spells_list()
-        self._append_log(f"Registro spell atualizado: {sid}")
+        self._append_log(f"Spell record updated: {sid}")
 
     def on_save_spells_file(self) -> None:
         try:
             self.core.save_spells_file()
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Erro", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
 
     # ===================================================================
     # Previews
@@ -971,41 +971,41 @@ class MainWindow(QMainWindow):
         self.update_preview_grid(force=True)
 
     def new_preview(self) -> None:
-        sid, ok = QInputDialog.getInt(self, "Novo preview", "spellid:", 1, 1)
+        sid, ok = QInputDialog.getInt(self, "New preview", "spellid:", 1, 1)
         if not ok:
             return
         key = str(sid)
         if key in self.core.previews_data:
-            QMessageBox.critical(self, "Erro", f"spellid {sid} ja existe em previews.")
+            QMessageBox.critical(self, "Error", f"spellid {sid} already exists in previews.")
             return
         self.core.previews_data[key] = {"spellid": sid, "range": 0, "name": f"New Preview {sid}", "timestamps": [], "initActions": []}
         self.refresh_previews_list()
-        self._append_log(f"Novo registro preview criado: {sid}")
+        self._append_log(f"New preview record created: {sid}")
 
     def duplicate_preview(self) -> None:
         if self.selected_preview_key is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de preview para duplicar.")
+            QMessageBox.warning(self, "Attention", "Select a preview record to duplicate.")
             return
         source = self.core.previews_data.get(self.selected_preview_key)
         if source is None:
             return
-        sid, ok = QInputDialog.getInt(self, "Duplicar preview", "Novo spellid:", 1, 1)
+        sid, ok = QInputDialog.getInt(self, "Duplicate preview", "New spellid:", 1, 1)
         if not ok:
             return
         key = str(sid)
         if key in self.core.previews_data:
-            QMessageBox.critical(self, "Erro", f"spellid {sid} ja existe em previews.")
+            QMessageBox.critical(self, "Error", f"spellid {sid} already exists in previews.")
             return
         clone = copy.deepcopy(source)
         clone["spellid"] = sid
         clone["name"] = f"{safe_text_value(clone.get('name', 'Preview'))} (Copy)"
         self.core.previews_data[key] = clone
         self.refresh_previews_list()
-        self._append_log(f"Registro preview duplicado para {sid}")
+        self._append_log(f"Preview record duplicated to {sid}")
 
     def delete_preview(self) -> None:
         if self.selected_preview_key is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de preview para deletar.")
+            QMessageBox.warning(self, "Attention", "Select a preview record to delete.")
             return
         key = self.selected_preview_key
         self.core.previews_data.pop(key, None)
@@ -1015,18 +1015,18 @@ class MainWindow(QMainWindow):
         self.init_actions_list.clear()
         self.refresh_previews_list()
         self.update_preview_grid(force=True)
-        self._append_log(f"Registro preview removido: {key}")
+        self._append_log(f"Preview record removed: {key}")
 
     def save_preview_record(self) -> None:
         if self.selected_preview_key is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um registro de preview para salvar.")
+            QMessageBox.warning(self, "Attention", "Select a preview record to save.")
             return
         record = self.core.previews_data[self.selected_preview_key]
         try:
             sid = int(self.preview_fields["spellid"].text().strip())
             rng = int(self.preview_fields["range"].text().strip() or 0)
         except ValueError:
-            QMessageBox.critical(self, "Erro", "Campos numericos de preview invalidos.")
+            QMessageBox.critical(self, "Error", "Invalid numeric preview fields.")
             return
         parsed = dict(record)
         parsed["spellid"] = sid
@@ -1034,7 +1034,7 @@ class MainWindow(QMainWindow):
         parsed["range"] = rng
         new_key = str(sid)
         if new_key != self.selected_preview_key and new_key in self.core.previews_data:
-            QMessageBox.critical(self, "Erro", f"Ja existe outro preview com spellid {new_key}.")
+            QMessageBox.critical(self, "Error", f"Another preview already exists with spellid {new_key}.")
             return
         old_key = self.selected_preview_key
         if new_key != old_key:
@@ -1042,13 +1042,13 @@ class MainWindow(QMainWindow):
         self.core.previews_data[new_key] = parsed
         self.selected_preview_key = new_key
         self.refresh_previews_list()
-        self._append_log(f"Registro preview atualizado: {new_key}")
+        self._append_log(f"Preview record updated: {new_key}")
 
     def on_save_previews_file(self) -> None:
         try:
             self.core.save_previews_file()
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Erro", str(exc))
+            QMessageBox.critical(self, "Error", str(exc))
 
     # ---- timestamps / actions ------------------------------------------
     def _current_preview(self) -> dict | None:
@@ -1082,7 +1082,7 @@ class MainWindow(QMainWindow):
     def add_timestamp(self) -> None:
         rec = self._current_preview()
         if rec is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um preview.")
+            QMessageBox.warning(self, "Attention", "Select a preview.")
             return
         t, ok = QInputDialog.getInt(self, "Timestamp", "Valor do timestamp (ms):", 0, 0)
         if not ok:
@@ -1099,7 +1099,7 @@ class MainWindow(QMainWindow):
         idx = self.timestamps_list.currentRow()
         timestamps = rec.get("timestamps", [])
         if idx < 0 or idx >= len(timestamps):
-            QMessageBox.warning(self, "Atencao", "Selecione um timestamp para remover.")
+            QMessageBox.warning(self, "Attention", "Select a timestamp to remove.")
             return
         timestamps.pop(idx)
         self.refresh_timestamps_list()
@@ -1135,7 +1135,7 @@ class MainWindow(QMainWindow):
     def add_action(self) -> None:
         ts = self.get_selected_timestamp()
         if ts is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um timestamp antes de adicionar acao.")
+            QMessageBox.warning(self, "Attention", "Select a timestamp before adding an action.")
             return
         ts.setdefault("actions", []).append(self._build_action_from_form())
         self.refresh_actions_list()
@@ -1147,7 +1147,7 @@ class MainWindow(QMainWindow):
             return
         sel = self.actions_list.currentRow()
         if sel < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione uma acao para atualizar.")
+            QMessageBox.warning(self, "Attention", "Select an action to update.")
             return
         ts["actions"][sel] = self._build_action_from_form()
         self.refresh_actions_list()
@@ -1159,7 +1159,7 @@ class MainWindow(QMainWindow):
             return
         sel = self.actions_list.currentRow()
         if sel < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione uma acao para remover.")
+            QMessageBox.warning(self, "Attention", "Select an action to remove.")
             return
         ts["actions"].pop(sel)
         self.refresh_actions_list()
@@ -1196,7 +1196,7 @@ class MainWindow(QMainWindow):
     def add_init_action(self) -> None:
         rec = self._current_preview()
         if rec is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um preview antes de adicionar initAction.")
+            QMessageBox.warning(self, "Attention", "Select a preview before adding initAction.")
             return
         rec.setdefault("initActions", []).append(self._build_init_action_from_form())
         self.refresh_init_actions_list()
@@ -1208,7 +1208,7 @@ class MainWindow(QMainWindow):
             return
         sel = self.init_actions_list.currentRow()
         if sel < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione uma initAction para atualizar.")
+            QMessageBox.warning(self, "Attention", "Select an initAction to update.")
             return
         rec["initActions"][sel] = self._build_init_action_from_form()
         self.refresh_init_actions_list()
@@ -1220,7 +1220,7 @@ class MainWindow(QMainWindow):
             return
         sel = self.init_actions_list.currentRow()
         if sel < 0:
-            QMessageBox.warning(self, "Atencao", "Selecione uma initAction para remover.")
+            QMessageBox.warning(self, "Attention", "Select an initAction to remove.")
             return
         rec["initActions"].pop(sel)
         self.refresh_init_actions_list()
@@ -1244,12 +1244,12 @@ class MainWindow(QMainWindow):
         self._refresh_asset_picker_list()
 
     def on_update_field_objects_json(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Selecione o diretorio que contem o items.xml")
+        folder = QFileDialog.getExistingDirectory(self, "Select directory containing items.xml")
         if not folder:
             return
         items_xml = Path(folder) / "items.xml"
         if not items_xml.exists():
-            QMessageBox.warning(self, "Atencao", f"Nao encontrei items.xml em:\n{folder}")
+            QMessageBox.warning(self, "Attention", f"Could not find items.xml in:\n{folder}")
             return
 
         def work():
@@ -1369,19 +1369,19 @@ class MainWindow(QMainWindow):
 
     def on_grid_right_click(self, gx: int, gy: int, global_pos: QPoint) -> None:
         menu = QMenu(self)
-        act_select_here = menu.addAction("Selecionar ação aqui")
-        act_add_effect_here = menu.addAction("Adicionar Effect aqui")
-        act_add_missile_here = menu.addAction("Adicionar Missile aqui")
-        act_add_object_here = menu.addAction("Adicionar Object aqui")
-        act_add_current_here = menu.addAction("Adicionar ação atual aqui")
-        act_remove_here = menu.addAction("Remover ação aqui")
-        act_target_here = menu.addAction("Definir Target aqui")
+        act_select_here = menu.addAction("Select action here")
+        act_add_effect_here = menu.addAction("Add Effect here")
+        act_add_missile_here = menu.addAction("Add Missile here")
+        act_add_object_here = menu.addAction("Add Object here")
+        act_add_current_here = menu.addAction("Add current action here")
+        act_remove_here = menu.addAction("Remove action here")
+        act_target_here = menu.addAction("Set Target here")
         menu.addSeparator()
-        act_mode_add = menu.addAction("Trocar modo para Adicionar")
-        act_mode_target = menu.addAction("Trocar modo para Definir Target")
+        act_mode_add = menu.addAction("Switch mode to Add")
+        act_mode_target = menu.addAction("Switch mode to Set Target")
         menu.addSeparator()
-        act_undo = menu.addAction("Desfazer")
-        act_redo = menu.addAction("Refazer")
+        act_undo = menu.addAction("Undo")
+        act_redo = menu.addAction("Redo")
         selected = menu.exec(global_pos)
         if selected is None:
             return
@@ -1397,26 +1397,26 @@ class MainWindow(QMainWindow):
         if selected == act_add_effect_here:
             self.asset_kind_combo.setCurrentText("Effect")
             self._refresh_asset_picker_list()
-            self._set_grid_mode("Adicionar")
+            self._set_grid_mode("Add")
             self._grid_gesture_snapshot_taken = False
             self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
             return
         if selected == act_add_missile_here:
             self.asset_kind_combo.setCurrentText("Missile")
             self._refresh_asset_picker_list()
-            self._set_grid_mode("Adicionar")
+            self._set_grid_mode("Add")
             self._grid_gesture_snapshot_taken = False
             self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
             return
         if selected == act_add_object_here:
             self.asset_kind_combo.setCurrentText("Object")
             self._refresh_asset_picker_list()
-            self._set_grid_mode("Adicionar")
+            self._set_grid_mode("Add")
             self._grid_gesture_snapshot_taken = False
             self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
             return
         if selected == act_add_current_here:
-            self._set_grid_mode("Adicionar")
+            self._set_grid_mode("Add")
             self._grid_gesture_snapshot_taken = False
             self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
             return
@@ -1425,13 +1425,13 @@ class MainWindow(QMainWindow):
             self._on_grid_edit(gx, gy, dragged=False, ctrl=True)
             return
         if selected == act_target_here:
-            self._set_grid_mode("Definir Target")
+            self._set_grid_mode("Set Target")
             self._grid_gesture_snapshot_taken = False
             self._on_grid_edit(gx, gy, dragged=False, ctrl=False)
             return
         mode_map = {
-            act_mode_add: "Adicionar",
-            act_mode_target: "Definir Target",
+            act_mode_add: "Add",
+            act_mode_target: "Set Target",
         }
         mode = mode_map.get(selected)
         if mode is None:
@@ -1446,13 +1446,13 @@ class MainWindow(QMainWindow):
         mode = self._grid_tool_mode
         ts = self.get_selected_timestamp()
         if ts is None:
-            QMessageBox.warning(self, "Atencao", "Selecione um timestamp antes de editar no grid.")
+            QMessageBox.warning(self, "Attention", "Select a timestamp before editing in the grid.")
             self.action_x.setText(str(ax))
             self.action_y.setText(str(ay))
             self.update_preview_grid(force=True)
             return
 
-        # Clique esquerdo sempre seleciona.
+        # Left click always selects.
         if not dragged:
             self._select_action_at_grid(gx, gy)
 
@@ -1465,7 +1465,7 @@ class MainWindow(QMainWindow):
             self.update_preview_grid(force=True)
             return
 
-        if dragged and mode != "Definir Target":
+        if dragged and mode != "Set Target":
             self._push_preview_undo_if_needed()
             sel = self.actions_list.currentRow()
             actions = ts.get("actions", [])
@@ -1480,7 +1480,7 @@ class MainWindow(QMainWindow):
             self.update_preview_grid(force=True)
             return
 
-        if mode == "Adicionar":
+        if mode == "Add":
             self._push_preview_undo_if_needed()
             self.action_x.setText(str(ax))
             self.action_y.setText(str(ay))
@@ -1490,7 +1490,7 @@ class MainWindow(QMainWindow):
             self.update_preview_grid(force=True)
             return
 
-        if mode == "Definir Target":
+        if mode == "Set Target":
             self._push_preview_undo_if_needed()
             rec = self._current_preview()
             if rec is None:
@@ -1722,11 +1722,15 @@ class MainWindow(QMainWindow):
     # Build
     # ===================================================================
     def on_compile_install(self) -> None:
-        self.run_bg(self.core.compile_and_install, lambda: QMessageBox.information(self, "Build", "Compilacao + instalacao concluida."))
+        self.run_bg(self.core.compile_and_install, lambda: QMessageBox.information(self, "Build", "Compilation + installation completed."))
 
     def on_manual_backup(self) -> None:
-        self.run_bg(self.core.manual_backup, lambda: QMessageBox.information(self, "Backup", "Backup manual concluido."))
+        self.run_bg(self.core.manual_backup, lambda: QMessageBox.information(self, "Backup", "Manual backup completed."))
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._save_ui_settings()
         super().closeEvent(event)
+
+
+
+
