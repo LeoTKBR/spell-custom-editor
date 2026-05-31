@@ -71,13 +71,13 @@ Note: this feature is still under development and may have some issues.
 ## Screenshots
 
 ### Icon Editor
-![Icon Editor](screenshots/icon_editor.png)
+![Icon Editor](https://raw.githubusercontent.com/LeoTKBR/spell-custom-editor/refs/heads/main/screenshot/icon_editor.png)
 
 ### Spells Editor
-![Spells Editor](screenshots/spell_editor.png)
+![Spells Editor](https://raw.githubusercontent.com/LeoTKBR/spell-custom-editor/refs/heads/main/screenshot/spell_editor.png)
 
 ### Spell Preview Editor (Structural)
-![Spell Preview Editor - Structural](screenshots/spell_preview_editor.png)
+![Spell Preview Editor - Structural](https://raw.githubusercontent.com/LeoTKBR/spell-custom-editor/refs/heads/main/screenshot/spell_preview_editor.png)
 
 ### Spell Preview Editor (Grid FX/Missiles)
-![Spell Preview Editor - Grid FX/Missiles](screenshots/grid_editor.png)
+![Spell Preview Editor - Grid FX/Missiles](https://raw.githubusercontent.com/LeoTKBR/spell-custom-editor/refs/heads/main/screenshot/grid_editor.png)
